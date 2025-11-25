@@ -1,7 +1,7 @@
 ### 注意事項
 
-- AviUtl1 系には対応していません。
-- AviUtl ExEdit2 version 2.0beta21 以降が必要です。
+- AviUtl1 系には[以前のもの](https://github.com/oov/aviutl_gcmzdrops/releases)をお使いください。
+- AviUtl ExEdit2 version 2.0beta21 が必要です。
 
 ### ダウンロード
 

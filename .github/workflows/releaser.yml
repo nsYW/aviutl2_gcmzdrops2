@@ -63,6 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CREATE_RELEASE_SECRET }}
           VERSION: ${{ needs.build.outputs.version }}
+          REPO: ${{ github.repository }}
         shell: bash
         run: |
           envsubst < .github/RELEASE_TEMPLATE.md > release_notes.md
