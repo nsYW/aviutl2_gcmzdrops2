@@ -1527,6 +1527,11 @@ static int delayed_initialization_thread(void *userdata) {
       goto cleanup;
     }
 
+    // Wait until AviUtl ready
+    while (!gcmz_aviutl2_internal_object_ptr_is_valid()) {
+      Sleep(50);
+    }
+
     bool external_api_enabled = false;
     if (!gcmz_config_get_external_api(g_config, &external_api_enabled, &err)) {
       OV_ERROR_ADD_TRACE(&err);

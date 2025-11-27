@@ -480,13 +480,37 @@ cleanup:
 }
 
 static struct aviutl2_main_context *get_main_context(void) {
-  void *layer_ctx = *(void **)calc_offset(g_aviutl2_module, g_version_info.layer_window_context);
-  return *(struct aviutl2_main_context **)calc_offset(layer_ctx, g_version_info.project_context_offset);
+  void **layer_ctx_ptr = (void **)calc_offset(g_aviutl2_module, g_version_info.layer_window_context);
+  if (!layer_ctx_ptr) {
+    return NULL;
+  }
+  void *layer_ctx = *layer_ctx_ptr;
+  if (!layer_ctx) {
+    return NULL;
+  }
+  struct aviutl2_main_context **main_ctx_ptr =
+      (struct aviutl2_main_context **)calc_offset(layer_ctx, g_version_info.project_context_offset);
+  if (!main_ctx_ptr) {
+    return NULL;
+  }
+  return *main_ctx_ptr;
 }
 
 static void *get_internal_object_ptr(void) {
   struct aviutl2_main_context *ctx = get_main_context();
-  return *(void **)calc_offset(ctx, g_version_info.project_data_offset);
+  if (!ctx) {
+    return NULL;
+  }
+  void **ptr = (void **)calc_offset(ctx, g_version_info.project_data_offset);
+  if (!ptr) {
+    return NULL;
+  }
+  return *ptr;
+}
+
+bool gcmz_aviutl2_internal_object_ptr_is_valid(void) {
+  void *internal_obj = get_internal_object_ptr();
+  return internal_obj != NULL;
 }
 
 static int get_project_data_int(size_t const offset) {
@@ -494,7 +518,11 @@ static int get_project_data_int(size_t const offset) {
   if (!internal_obj) {
     return 0;
   }
-  return *(int *)calc_offset(internal_obj, offset);
+  int *ptr = (int *)calc_offset(internal_obj, offset);
+  if (!ptr) {
+    return 0;
+  }
+  return *ptr;
 }
 
 static void set_project_data_int(size_t const offset, int const value) {
@@ -507,7 +535,14 @@ static void set_project_data_int(size_t const offset, int const value) {
 
 static wchar_t const *get_project_path_internal(void) {
   struct aviutl2_main_context *ctx = get_main_context();
-  return *(wchar_t const **)calc_offset(ctx, g_version_info.project_path_offset);
+  if (!ctx) {
+    return NULL;
+  }
+  wchar_t const **ptr = (wchar_t const **)calc_offset(ctx, g_version_info.project_path_offset);
+  if (!ptr) {
+    return NULL;
+  }
+  return *ptr;
 }
 
 static void call_set_cursor_frame(void *userdata) {

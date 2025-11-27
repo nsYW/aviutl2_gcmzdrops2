@@ -42,6 +42,13 @@ NODISCARD enum gcmz_aviutl2_status gcmz_aviutl2_init(struct ov_error *const err)
 void gcmz_aviutl2_cleanup(void);
 
 /**
+ * @brief Check if internal object pointer is valid
+ *
+ * @return true if valid, false otherwise
+ */
+bool gcmz_aviutl2_internal_object_ptr_is_valid(void);
+
+/**
  * @brief Get main AviUtl2 window handle
  *
  * @return Window handle to AviUtl2 main window, or NULL if unavailable
