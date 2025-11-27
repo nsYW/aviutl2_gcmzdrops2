@@ -239,6 +239,12 @@ msgstr "検出された AviUtl ExEdit2 のバージョンは %1$s です"
 msgid "detected AviUtl ExEdit2 version is %1$s, but signature verification failed. the data may not be from an official release."
 msgstr "検出された AviUtl ExEdit2 のバージョンは %1$s ですが、署名の検証に失敗しました。公式リリースではないデータの可能性があります。"
 
+msgid "dialog_ui_font"
+msgstr ""
+"Yu Gothic UI\n"
+"Meiryo UI\n"
+"MS UI Gothic"
+
 msgctxt "external_api"
 msgid "external API already exists"
 msgstr "外部連携APIは既に存在しています"

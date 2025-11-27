@@ -238,6 +238,12 @@ msgstr "检测到AviUtl ExEdit2版本为 %1$s"
 msgid "detected AviUtl ExEdit2 version is %1$s, but signature verification failed. the data may not be from an official release."
 msgstr "检测到AviUtl ExEdit2版本为 %1$s，但签名验证失败。数据可能来自非官方版本。"
 
+msgid "dialog_ui_font"
+msgstr ""
+"Microsoft YaHei UI\n"
+"Microsoft YaHei\n"
+"SimSun"
+
 msgctxt "external_api"
 msgid "external API already exists"
 msgstr "外部API已存在"

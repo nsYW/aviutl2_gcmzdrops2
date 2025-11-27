@@ -9,6 +9,7 @@
 #include <ovarray.h>
 #include <ovmo.h>
 #include <ovprintf.h>
+#include <ovutf.h>
 
 #include <ovl/dialog.h>
 #include <ovl/os.h>
@@ -51,6 +52,7 @@ struct dialog_data {
   struct config_dialog_tooltip *tooltip;
   struct config_dialog_combo_tooltip *combo_tooltip;
   bool external_api_running;
+  HFONT dialog_font;
 };
 
 static char const *get_processing_mode_tooltip(int index, void *userdata) {
@@ -82,12 +84,192 @@ static void update_path_buttons_state(HWND dialog) {
   EnableWindow(GetDlgItem(dialog, id_button_move_down), sel != LB_ERR && sel < count - 2);
 }
 
+static bool check_font_availability(wchar_t const *font_name, struct ov_error *const err) {
+  if (!font_name || !font_name[0]) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+
+  wchar_t actual_name[LF_FACESIZE] = {0};
+  HFONT hfont = NULL;
+  HFONT old_font = NULL;
+  bool result = false;
+
+  HDC hdc = GetDC(NULL);
+  if (!hdc) {
+    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+    goto cleanup;
+  }
+  hfont = CreateFontW(0,
+                      0,
+                      0,
+                      0,
+                      FW_NORMAL,
+                      FALSE,
+                      FALSE,
+                      FALSE,
+                      DEFAULT_CHARSET,
+                      OUT_DEFAULT_PRECIS,
+                      CLIP_DEFAULT_PRECIS,
+                      DEFAULT_QUALITY,
+                      DEFAULT_PITCH | FF_DONTCARE,
+                      font_name);
+  if (!hfont) {
+    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+    goto cleanup;
+  }
+  old_font = (HFONT)SelectObject(hdc, hfont);
+  if (!old_font) {
+    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+    goto cleanup;
+  }
+  if (!GetTextFaceW(hdc, LF_FACESIZE, actual_name)) {
+    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+    goto cleanup;
+  }
+  if (wcscmp(font_name, actual_name) == 0) {
+    result = true;
+  }
+
+cleanup:
+  if (old_font && hdc) {
+    SelectObject(hdc, old_font);
+  }
+  if (hfont) {
+    DeleteObject(hfont);
+  }
+  if (hdc) {
+    ReleaseDC(NULL, hdc);
+  }
+  return result;
+}
+
+static HFONT create_dialog_font(HWND dialog, char const *font_list_utf8, struct ov_error *const err) {
+  if (!dialog || !font_list_utf8 || !font_list_utf8[0]) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return NULL;
+  }
+
+  HDC hdc = NULL;
+  HFONT hfont = NULL;
+  int font_height = 0;
+
+  {
+    hdc = GetDC(NULL);
+    if (!hdc) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+
+    // Get font size from dialog resource
+    HFONT current_font = (HFONT)(SendMessageW(dialog, WM_GETFONT, 0, 0));
+    if (current_font) {
+      LOGFONTW current_logfont = {0};
+      if (GetObjectW(current_font, sizeof(LOGFONTW), &current_logfont)) {
+        font_height = current_logfont.lfHeight;
+      }
+    }
+    if (font_height == 0) {
+      // Fallback to 9 point if we can't get current font size
+      font_height = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+    }
+
+    char const *start = font_list_utf8;
+    while (start && *start) {
+      char const *end = strchr(start, '\n');
+      size_t len = end ? (size_t)(end - start) : strlen(start);
+
+      // Trim whitespace
+      while (len > 0 && (*start == ' ' || *start == '\t' || *start == '\r')) {
+        start++;
+        len--;
+      }
+      while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t' || start[len - 1] == '\r')) {
+        len--;
+      }
+
+      if (len > 0) {
+        wchar_t font_name[LF_FACESIZE];
+        if (ov_utf8_to_wchar(start, len, font_name, LF_FACESIZE, NULL) > 0) {
+          struct ov_error check_err = {0};
+          if (check_font_availability(font_name, &check_err)) {
+            hfont = CreateFontW(font_height,
+                                0,
+                                0,
+                                0,
+                                FW_NORMAL,
+                                FALSE,
+                                FALSE,
+                                FALSE,
+                                DEFAULT_CHARSET,
+                                OUT_DEFAULT_PRECIS,
+                                CLIP_DEFAULT_PRECIS,
+                                DEFAULT_QUALITY,
+                                DEFAULT_PITCH | FF_DONTCARE,
+                                font_name);
+            if (hfont) {
+              goto cleanup;
+            }
+          }
+          OV_ERROR_DESTROY(&check_err);
+        }
+      }
+
+      start = end ? end + 1 : NULL;
+    }
+
+    hfont = CreateFontW(font_height,
+                        0,
+                        0,
+                        0,
+                        FW_NORMAL,
+                        FALSE,
+                        FALSE,
+                        FALSE,
+                        DEFAULT_CHARSET,
+                        OUT_DEFAULT_PRECIS,
+                        CLIP_DEFAULT_PRECIS,
+                        DEFAULT_QUALITY,
+                        DEFAULT_PITCH | FF_DONTCARE,
+                        L"Tahoma");
+  }
+
+cleanup:
+  if (hdc) {
+    ReleaseDC(NULL, hdc);
+  }
+  return hfont;
+}
+
+static void set_dialog_font(HWND hwnd, HFONT hfont) {
+  if (!hwnd || !hfont) {
+    return;
+  }
+  SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, FALSE);
+  HWND child = GetWindow(hwnd, GW_CHILD);
+  while (child) {
+    set_dialog_font(child, hfont);
+    child = GetWindow(child, GW_HWNDNEXT);
+  }
+}
+
 static INT_PTR init_dialog(HWND dialog, struct dialog_data *data) {
   SetPropW(dialog, g_config_dialog_prop_name, data);
 
   static wchar_t const ph[] = L"%1$s";
   struct ov_error err = {0};
   WCHAR buf[256];
+  static char const font_list_key[] = gettext_noop("dialog_ui_font");
+  char const *font_list = gettext(font_list_key);
+  if (strcmp(font_list, font_list_key) == 0) {
+    font_list = "Segoe UI\nTahoma\nMS Sans Serif";
+  }
+  data->dialog_font = create_dialog_font(dialog, font_list, &err);
+  if (!data->dialog_font) {
+    OV_ERROR_REPORT(&err, NULL);
+  } else {
+    set_dialog_font(dialog, data->dialog_font);
+  }
 
   ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("GCMZDrops Settings"));
   SetWindowTextW(dialog, buf);
@@ -666,6 +848,13 @@ static INT_PTR CALLBACK dialog_proc(HWND dialog, UINT message, WPARAM wParam, LP
     if (data) {
       config_dialog_tooltip_destroy(&data->tooltip);
       config_dialog_combo_tooltip_destroy(&data->combo_tooltip);
+
+      // Cleanup font
+      if (data->dialog_font) {
+        DeleteObject(data->dialog_font);
+        data->dialog_font = NULL;
+      }
+
       RemovePropW(dialog, g_config_dialog_prop_name);
     }
     return TRUE;
