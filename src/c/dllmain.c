@@ -637,10 +637,12 @@ static void tray_menu_debug_capture_callback(void *userdata, struct gcmz_tray_ca
     int zoom = -1;
     bool success = false;
 
-    if (gcmz_project_info_get(&project_data, &err)) {
-      zoom = project_data.display_zoom;
-      OV_ERROR_DESTROY(&err);
+    if (!gcmz_project_info_get(&project_data, &err)) {
+      gcmz_logf_error(&err, "%s", "%s", "failed to get project info for debug capture");
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
     }
+    zoom = project_data.display_zoom;
     if (!gcmz_analyze_run(g_capture, zoom, &result, analyze_complete_callback, NULL, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to capture for debug");
       OV_ERROR_ADD_TRACE(&err);
