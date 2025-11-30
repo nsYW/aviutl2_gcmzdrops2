@@ -480,6 +480,9 @@ cleanup:
 }
 
 static struct aviutl2_main_context *get_main_context(void) {
+  if (!is_valid_version_info()) {
+    return NULL;
+  }
   void **layer_ctx_ptr = (void **)calc_offset(g_aviutl2_module, g_version_info.layer_window_context);
   if (!layer_ctx_ptr) {
     return NULL;
