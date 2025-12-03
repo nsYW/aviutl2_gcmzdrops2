@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0alpha4 2025-12-03
+
+- AviUtl ExEdit2.0beta22a に対応
+
 ## 2.0.0alpha3 2025-11-30
 
 - AviUtl ExEdit2.0beta22 に対応
