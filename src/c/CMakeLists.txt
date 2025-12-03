@@ -164,6 +164,7 @@ add_library(gcmzdrops SHARED
   delayed_cleanup.c
   dllmain.c
   do.c
+  do_sub.c
   drop.c
   copy.c
   error.c
@@ -380,6 +381,14 @@ target_link_libraries(test_do PRIVATE
   comctl32
 )
 add_test(NAME test_do COMMAND test_do)
+
+add_executable(test_do_sub do_sub_test.c do_sub.c)
+target_link_libraries(test_do_sub PRIVATE
+  gcmzdrops_intf
+  ovbase
+  ovl
+)
+add_test(NAME test_do_sub COMMAND test_do_sub)
 
 add_executable(test_api api_test.c api.c file.c json.c)
 target_link_libraries(test_api PRIVATE

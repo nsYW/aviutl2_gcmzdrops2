@@ -64,6 +64,7 @@
 #include "dataobj.h"
 #include "delayed_cleanup.h"
 #include "do.h"
+#include "do_sub.h"
 #include "drop.h"
 #include "error.h"
 #include "file.h"
@@ -1403,6 +1404,7 @@ static void finalize(void *const userdata) {
   }
   gcmz_delayed_cleanup_exit();
   gcmz_temp_remove_directory();
+  gcmz_do_sub_exit();
   gcmz_do_exit();
   gcmz_aviutl2_cleanup();
   if (g_mo) {
@@ -1659,6 +1661,11 @@ static bool initialize(struct ov_error *const err) {
               .on_change_activate = on_change_activate,
           },
           err)) {
+    OV_ERROR_ADD_TRACE(err);
+    goto cleanup;
+  }
+
+  if (!gcmz_do_sub_init(err)) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
   }
