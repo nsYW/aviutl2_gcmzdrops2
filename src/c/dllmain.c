@@ -2245,6 +2245,50 @@ void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host) {
   mtx_unlock(&g_init_mtx);
 }
 
+/**
+ * @brief Add a handler script from a Lua script string
+ *
+ * @param name Module name for identification
+ * @param script Lua script string that returns a module table
+ * @param script_len Length of the script in bytes
+ * @return true on success, false on failure
+ */
+bool __declspec(dllexport) AddHandlerScript(char const *const name, char const *const script, size_t const script_len);
+bool __declspec(dllexport) AddHandlerScript(char const *const name, char const *const script, size_t const script_len) {
+  if (!g_lua_ctx || !name || !script) {
+    return false;
+  }
+  struct ov_error err = {0};
+  if (!gcmz_lua_add_handler_script(g_lua_ctx, name, script, script_len, &err)) {
+    OV_ERROR_ADD_TRACE(&err);
+    gcmz_logf_warn(&err, "%1$hs", gettext("failed to add handler script %1$hs"), name);
+    OV_ERROR_DESTROY(&err);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @brief Add a handler script from a Lua script file
+ *
+ * @param filepath Path to the Lua script file
+ * @return true on success, false on failure
+ */
+bool __declspec(dllexport) AddHandlerScriptFile(wchar_t const *const filepath);
+bool __declspec(dllexport) AddHandlerScriptFile(wchar_t const *const filepath) {
+  if (!g_lua_ctx || !filepath) {
+    return false;
+  }
+  struct ov_error err = {0};
+  if (!gcmz_lua_add_handler_script_file(g_lua_ctx, filepath, &err)) {
+    OV_ERROR_ADD_TRACE(&err);
+    gcmz_logf_warn(&err, "%1$ls", gettext("failed to add handler script file %1$ls"), filepath);
+    OV_ERROR_DESTROY(&err);
+    return false;
+  }
+  return true;
+}
+
 static void error_output_hook(enum ov_error_severity severity, char const *str) {
   (void)severity;
   if (!str) {
