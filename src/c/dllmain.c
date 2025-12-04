@@ -73,7 +73,6 @@
 #include "lua.h"
 #include "lua_api.h"
 #include "luautil.h"
-#include "project_info.h"
 #include "style_config.h"
 #include "temp.h"
 #include "tray.h"
@@ -97,6 +96,7 @@ static struct aviutl2_log_handle *g_logger = NULL;
 static struct aviutl2_edit_handle *g_edit = NULL;
 static bool g_unknown_binary = false;
 static uint32_t g_aviutl2_version = 0;
+static wchar_t *g_project_path = NULL;
 
 // Synchronization primitives for delayed initialization thread
 // g_plugin_registered states:
@@ -151,7 +151,6 @@ struct cursor_position_params {
   int x;
   int y;
   void *window;
-  struct gcmz_project_data original_data;
 };
 
 // Helper function to determine cursor position for drop operation
@@ -164,34 +163,35 @@ static bool determine_cursor_position(int const target_layer,
   }
 
   bool result = false;
-  struct gcmz_project_data original_data = {0};
+
+  int display_frame, display_layer, display_zoom;
+  struct aviutl2_edit_info edit_info = {0};
   struct gcmz_analyze_result capture_result = {0};
-  struct gcmz_project_data data = {0};
   int drop_layer_offset = 0;
 
   {
-    if (!gcmz_project_info_get(&original_data, err)) {
+    g_edit->get_edit_info(&edit_info, sizeof(edit_info));
+    if (!gcmz_aviutl2_get_extended_project_info(&display_frame, &display_layer, &display_zoom, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-
-    if (original_data.display_zoom < 10000) {
+    if (display_zoom < 10000) {
       gcmz_logf_verbose(NULL,
                         "%1$d",
                         "Current display zoom is %1$d < 10000. Setting display zoom to 10000 for drop analysis.",
-                        original_data.display_zoom);
+                        display_zoom);
       gcmz_aviutl2_set_display_zoom(10000);
-      if (!gcmz_project_info_get(&original_data, err)) {
+      if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, err)) {
         OV_ERROR_ADD_TRACE(err);
         goto cleanup;
       }
-      if (original_data.display_zoom != 10000) {
+      if (display_zoom != 10000) {
         OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, gettext("failed to set display zoom"));
         goto cleanup;
       }
     }
 
-    if (!gcmz_analyze_run(g_capture, original_data.display_zoom, &capture_result, NULL, NULL, err)) {
+    if (!gcmz_analyze_run(g_capture, display_zoom, &capture_result, NULL, NULL, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -199,43 +199,43 @@ static bool determine_cursor_position(int const target_layer,
     int layer;
     if (target_layer < 0) {
       if (target_layer == INT_MIN) {
-        layer = original_data.selected_layer;
+        layer = edit_info.layer; // Current selected layer
       } else {
-        layer = -target_layer + original_data.display_layer;
+        layer = -target_layer + display_layer;
       }
     } else {
       layer = target_layer - 1;
     }
 
     int const n_layer = capture_result.effective_area.height / capture_result.layer_height;
-    if (layer < original_data.display_layer || original_data.display_layer + n_layer <= layer) {
+    if (layer < display_layer || display_layer + n_layer <= layer) {
       // Scroll to bring the target layer on-screen with minimum scroll distance
       int to;
-      if (layer < original_data.display_layer) {
+      if (layer < display_layer) {
         to = layer;
       } else {
         to = layer < n_layer - 1 ? 0 : layer - (n_layer - 1);
       }
       gcmz_aviutl2_set_display_layer(to);
-      if (!gcmz_project_info_get(&data, err)) {
+      if (!gcmz_aviutl2_get_extended_project_info(NULL, &display_layer, NULL, err)) {
         OV_ERROR_ADD_TRACE(err);
         goto cleanup;
       }
-      if (data.display_layer != to) {
+      if (display_layer != to) {
         OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to scroll");
         goto cleanup;
       }
     }
-    drop_layer_offset = layer - data.display_layer;
+    drop_layer_offset = layer - display_layer;
 
     if (capture_result.cursor.width == 0 || capture_result.cursor.height == 0) {
       // Move the cursor to bring it on-screen as it appears to be off-screen
-      int const pos = original_data.cursor_frame;
+      int const pos = edit_info.frame;
       gcmz_aviutl2_set_cursor_frame(pos ? pos - 1 : pos + 1);
       gcmz_aviutl2_set_cursor_frame(pos);
     }
 
-    if (!gcmz_analyze_run(g_capture, original_data.display_zoom, &capture_result, NULL, NULL, err)) {
+    if (!gcmz_analyze_run(g_capture, display_zoom, &capture_result, NULL, NULL, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -248,7 +248,6 @@ static bool determine_cursor_position(int const target_layer,
     params->x = capture_result.cursor.x + (capture_result.cursor.width / 2);
     params->y = capture_result.cursor.y + 4 + (drop_layer_offset * capture_result.layer_height);
     params->window = capture_result.window;
-    params->original_data = original_data;
   }
 
   result = true;
@@ -263,7 +262,6 @@ static void api_request_callback(struct gcmz_api_request_params *const params,
   }
 
   struct ov_error err = {0};
-  struct gcmz_project_data data = {0};
   bool success = false;
 
   {
@@ -282,12 +280,12 @@ static void api_request_callback(struct gcmz_api_request_params *const params,
       goto cleanup;
     }
     if (params->frame_advance != 0) {
-      gcmz_aviutl2_set_cursor_frame(pos_params.original_data.cursor_frame + params->frame_advance);
-      if (!gcmz_project_info_get(&data, &err)) {
-        OV_ERROR_ADD_TRACE(&err);
-        goto cleanup;
-      }
-      if (pos_params.original_data.cursor_frame + params->frame_advance != data.cursor_frame) {
+      struct aviutl2_edit_info edit_info = {0};
+      g_edit->get_edit_info(&edit_info, sizeof(edit_info));
+      int const move_to = edit_info.frame + params->frame_advance;
+      gcmz_aviutl2_set_cursor_frame(move_to);
+      g_edit->get_edit_info(&edit_info, sizeof(edit_info));
+      if (move_to != edit_info.frame) {
         OV_ERROR_SETF(&err,
                       ov_error_type_generic,
                       ov_error_generic_fail,
@@ -311,53 +309,52 @@ cleanup:
   }
 }
 
-static void update_api_project_data_edit_section(struct aviutl2_edit_section *edit) {
-  if (!g_api || !edit) {
+static void update_api_project_data(void *userdata) {
+  (void)userdata;
+
+  if (!g_edit || !g_api) {
     return;
   }
+
   struct ov_error err = {0};
+  struct aviutl2_edit_info ei = {0};
   bool success = false;
+
+  g_edit->get_edit_info(&ei, sizeof(ei));
   if (!gcmz_api_set_project_data(g_api,
                                  &(struct gcmz_project_data){
-                                     .width = edit->info->width,
-                                     .height = edit->info->height,
-                                     .video_rate = edit->info->rate,
-                                     .video_scale = edit->info->scale,
-                                     .sample_rate = edit->info->sample_rate,
+                                     .width = ei.width,
+                                     .height = ei.height,
+                                     .video_rate = ei.rate,
+                                     .video_scale = ei.scale,
+                                     .sample_rate = ei.sample_rate,
                                      .audio_ch = 2,
-                                     .project_path = (wchar_t *)ov_deconster_(gcmz_aviutl2_get_project_path()),
+                                     .project_path = g_project_path,
                                  },
                                  &err)) {
     OV_ERROR_ADD_TRACE(&err);
     goto cleanup;
+  } else {
+    gcmz_logf_verbose(NULL,
+                      "%1$d%2$d%3$d%4$d%5$d",
+                      "set project info: %1$dx%2$d, %3$d/%4$d fps, %5$d Hz",
+                      ei.width,
+                      ei.height,
+                      ei.rate,
+                      ei.scale,
+                      ei.sample_rate);
+    gcmz_logf_verbose(NULL, "%1$ls", "project path: %1$ls", g_project_path ? g_project_path : L"(NULL)");
   }
   success = true;
 cleanup:
   if (!success) {
-    gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to update external API project data"));
-    OV_ERROR_DESTROY(&err);
+    gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to update external api project information"));
   }
-}
-
-static void update_api_project_data(void *userdata) {
-  (void)userdata;
-  if (!g_api) {
-    return;
-  }
-  // FIXME:
-  // When trying to obtain the edit_handle using the official API to get project information,
-  // such as when loading a project file, the application crashes.
-  gcmz_aviutl2_create_simulated_edit_handle()->call_edit_section(update_api_project_data_edit_section);
 }
 
 #if !TARGET_AVIUTL2_PLUGIN
 static void api_update_callback(struct gcmz_api *const api, void *const userdata) {
-  (void)api;
-  (void)userdata;
-  if (!g_api) {
-    return;
-  }
-  gcmz_do(update_api_project_data, NULL);
+#  error "this mechanism is not supported."
 }
 #endif
 
@@ -634,17 +631,15 @@ static void tray_menu_debug_capture_callback(void *userdata, struct gcmz_tray_ca
   case gcmz_tray_callback_clicked: {
     struct ov_error err = {0};
     struct gcmz_analyze_result result = {0};
-    struct gcmz_project_data project_data = {0};
-    int zoom = -1;
+    int display_zoom = -1;
     bool success = false;
 
-    if (!gcmz_project_info_get(&project_data, &err)) {
-      gcmz_logf_error(&err, "%s", "%s", "failed to get project info for debug capture");
+    if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, &err)) {
+      gcmz_logf_error(&err, "%s", "%s", "failed to get display zoom for debug capture");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
-    zoom = project_data.display_zoom;
-    if (!gcmz_analyze_run(g_capture, zoom, &result, analyze_complete_callback, NULL, &err)) {
+    if (!gcmz_analyze_run(g_capture, display_zoom, &result, analyze_complete_callback, NULL, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to capture for debug");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -720,28 +715,6 @@ static void tray_menu_config_dialog_callback(void *userdata, struct gcmz_tray_ca
 
 #ifndef NDEBUG
 
-static void debug_edit_callback(struct aviutl2_edit_section *edit) {
-  if (!edit || !edit->info) {
-    return;
-  }
-  struct aviutl2_edit_info const *info = edit->info;
-  gcmz_logf_info(NULL,
-                 NULL,
-                 "[edit_section] width: %d / height: %d / rate: %d / scale: %d / sample_rate: %d",
-                 info->width,
-                 info->height,
-                 info->rate,
-                 info->scale,
-                 info->sample_rate);
-  gcmz_logf_info(NULL,
-                 NULL,
-                 "[edit_section] frame: %d / layer: %d / frame_max: %d / layer_max: %d",
-                 info->frame,
-                 info->layer,
-                 info->frame_max,
-                 info->layer_max);
-}
-
 static void debug_output_project_info(void) {
   gcmz_logf_verbose(NULL, "%1$s", "† verbose output †");
   gcmz_logf_info(NULL, "%1$s", "† info output †");
@@ -751,45 +724,45 @@ static void debug_output_project_info(void) {
   struct ov_error err = {0};
 
   gcmz_logf_info(NULL, NULL, "--- g_edit (0x%p) ---", (void *)g_edit);
-  if (g_edit && g_edit->call_edit_section) {
-    if (!g_edit->call_edit_section(debug_edit_callback)) {
-      gcmz_logf_warn(NULL, NULL, "g_edit->call_edit_section failed");
-    }
+  if (g_edit) {
+    struct aviutl2_edit_info info = {0};
+    g_edit->get_edit_info(&info, sizeof(info));
+    gcmz_logf_info(NULL,
+                   NULL,
+                   "[edit_section] width: %d / height: %d / rate: %d / scale: %d / sample_rate: %d",
+                   info.width,
+                   info.height,
+                   info.rate,
+                   info.scale,
+                   info.sample_rate);
+    gcmz_logf_info(NULL,
+                   NULL,
+                   "[edit_section] frame: %d / layer: %d / frame_max: %d / layer_max: %d",
+                   info.frame,
+                   info.layer,
+                   info.frame_max,
+                   info.layer_max);
   } else {
     gcmz_logf_warn(NULL, NULL, "g_edit is not available");
-  }
-
-  struct aviutl2_edit_handle *simulated = gcmz_aviutl2_create_simulated_edit_handle();
-  if (simulated && simulated != g_edit) {
-    gcmz_logf_info(NULL, NULL, "--- simulated_edit_handle (0x%p) ---", (void *)simulated);
-    if (simulated->call_edit_section) {
-      if (!simulated->call_edit_section(debug_edit_callback)) {
-        gcmz_logf_warn(NULL, NULL, "simulated->call_edit_section failed");
-      }
-    }
-  } else if (simulated == g_edit) {
-    gcmz_logf_info(NULL, NULL, "simulated_edit_handle == g_edit (same handle)");
-  } else {
-    gcmz_logf_info(NULL, NULL, "simulated_edit_handle is not available");
   }
 
   gcmz_logf_info(NULL, NULL, "--- extended_project_info ---");
   int display_frame = 0;
   int display_layer = 0;
   int display_zoom = 0;
-  wchar_t const *project_path = NULL;
-  if (gcmz_aviutl2_get_extended_project_info(&display_frame, &display_layer, &display_zoom, &project_path, &err)) {
+  if (gcmz_aviutl2_get_extended_project_info(&display_frame, &display_layer, &display_zoom, &err)) {
     gcmz_logf_info(NULL,
                    NULL,
                    "[extended] display_frame: %d / display_layer: %d / display_zoom: %d",
                    display_frame,
                    display_layer,
                    display_zoom);
-    gcmz_logf_info(NULL, NULL, "[extended] project_path: %ls", project_path ? project_path : L"(null)");
   } else {
     gcmz_logf_warn(&err, NULL, "gcmz_aviutl2_get_extended_project_info failed");
     OV_ERROR_DESTROY(&err);
   }
+  wchar_t const *project_path = gcmz_aviutl2_get_project_path();
+  gcmz_logf_info(NULL, NULL, "[extended] project_path: %ls", project_path ? project_path : L"(null)");
 }
 
 static void tray_menu_debug_output_callback(void *userdata, struct gcmz_tray_callback_event *const event) {
@@ -807,14 +780,14 @@ static void tray_menu_debug_output_callback(void *userdata, struct gcmz_tray_cal
   case gcmz_tray_callback_clicked: {
     struct ov_error err = {0};
     struct gcmz_analyze_result capture = {0};
-    struct gcmz_project_data project_data = {0};
+    int display_zoom = 0;
     bool success = false;
 
-    if (!gcmz_project_info_get(&project_data, &err)) {
+    if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
-    if (!gcmz_analyze_run(g_capture, project_data.display_zoom, &capture, NULL, NULL, &err)) {
+    if (!gcmz_analyze_run(g_capture, display_zoom, &capture, NULL, NULL, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to capture for debug output");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -940,14 +913,36 @@ static bool schedule_cleanup_callback(wchar_t const *const path, void *userdata,
   return true;
 }
 
-static bool
-get_project_data_callback(struct gcmz_project_data *project_data, void *userdata, struct ov_error *const err) {
+static bool lua_api_get_project_data_callback(struct aviutl2_edit_info *edit_info,
+                                              char **project_path,
+                                              void *userdata,
+                                              struct ov_error *const err) {
   (void)userdata;
-  if (!gcmz_project_info_get(project_data, err)) {
-    OV_ERROR_ADD_TRACE(err);
-    return false;
+  bool success = false;
+
+  if (edit_info) {
+    g_edit->get_edit_info(edit_info, sizeof(*edit_info));
   }
-  return true;
+  if (project_path) {
+    if (g_project_path && g_project_path[0] != L'\0') {
+      size_t const len = wcslen(g_project_path);
+      size_t const utf8_len = ov_wchar_to_utf8_len(g_project_path, len);
+      if (utf8_len == 0) {
+        OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+        goto cleanup;
+      }
+      if (!OV_ARRAY_GROW(project_path, utf8_len + 1)) {
+        OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
+        goto cleanup;
+      }
+      ov_wchar_to_utf8(g_project_path, len, *project_path, utf8_len + 1, NULL);
+    } else {
+      *project_path = NULL;
+    }
+  }
+  success = true;
+cleanup:
+  return success;
 }
 
 static wchar_t *drop_get_save_path_callback(wchar_t const *filename, void *userdata, struct ov_error *const err) {
@@ -1402,6 +1397,9 @@ static void finalize(void *const userdata) {
   if (g_window_list) {
     gcmz_window_list_destroy(&g_window_list);
   }
+  if (g_project_path) {
+    OV_ARRAY_DESTROY(&g_project_path);
+  }
   gcmz_delayed_cleanup_exit();
   gcmz_temp_remove_directory();
   gcmz_do_sub_exit();
@@ -1631,6 +1629,7 @@ static bool initialize(struct ov_error *const err) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
   }
+
   // If g_aviutl2_version was not set by InitializePlugin, get it from detected version
   if (g_aviutl2_version == 0) {
     g_aviutl2_version = gcmz_aviutl2_get_detected_version_uint32();
@@ -1641,16 +1640,6 @@ static bool initialize(struct ov_error *const err) {
     if (g_logger) {
       gcmz_logf_set_handle(g_logger);
     }
-  }
-
-  if (!g_edit) {
-    g_edit = gcmz_aviutl2_create_simulated_edit_handle();
-    if (g_edit) {
-      gcmz_project_info_set_handle(g_edit);
-    }
-  }
-  if (g_edit) {
-    gcmz_project_info_set_extended_getter(gcmz_aviutl2_get_extended_project_info);
   }
 
   main_window = gcmz_aviutl2_get_main_window();
@@ -1722,7 +1711,7 @@ static bool initialize(struct ov_error *const err) {
   gcmz_lua_api_set_options(&(struct gcmz_lua_api_options){
       .temp_file_provider = lua_api_temp_file_callback,
       .save_path_provider = lua_api_save_path_callback,
-      .get_project_data = get_project_data_callback,
+      .get_project_data = lua_api_get_project_data_callback,
       .userdata = NULL,
   });
 
@@ -1740,7 +1729,6 @@ static bool initialize(struct ov_error *const err) {
 
   g_drop = gcmz_drop_create(drop_extract_callback,
                             schedule_cleanup_callback,
-                            get_project_data_callback,
                             drop_file_manage_callback,
                             NULL,      // callback_userdata
                             g_lua_ctx, // lua_context
@@ -1924,6 +1912,32 @@ void __declspec(dllexport) InitializeLogger(struct aviutl2_log_handle *logger) {
 #if TARGET_AVIUTL2_FILTER_PLUGIN || TARGET_AVIUTL2_SCRIPT_MODULE || TARGET_AVIUTL2_PLUGIN
 BOOL __declspec(dllexport) InitializePlugin(DWORD version);
 BOOL __declspec(dllexport) InitializePlugin(DWORD version) {
+  if (version < 2002201) {
+    struct ov_error err = {0};
+    wchar_t title[128];
+    wchar_t main_instruction[128];
+    wchar_t content[512];
+    OV_ERROR_SETF(&err,
+                  ov_error_type_generic,
+                  ov_error_generic_fail,
+                  "%1$s",
+                  gettext("GCMZDrops requires AviUtl ExEdit2 %1$s or later."),
+                  "version2.0beta22a");
+    ov_snprintf_wchar(title, sizeof(title) / sizeof(title[0]), L"%s", L"%s", gettext("GCMZDrops"));
+    ov_snprintf_wchar(main_instruction,
+                      sizeof(main_instruction) / sizeof(main_instruction[0]),
+                      L"%s",
+                      L"%s",
+                      gettext("Failed to initialize GCMZDrops."));
+    ov_snprintf_wchar(content,
+                      sizeof(content) / sizeof(content[0]),
+                      L"%s",
+                      L"%s",
+                      gettext("The plugin could not start correctly.\nGCMZDrops is unavailable at the moment."));
+    gcmz_error_dialog(NULL, &err, title, main_instruction, content, TD_ERROR_ICON, TDCBF_OK_BUTTON);
+    return FALSE;
+  }
+
   g_aviutl2_version = version;
   struct ov_error err = {0};
   if (!initialize(&err)) {
@@ -1981,38 +1995,29 @@ struct aviutl2_script_module_table *__declspec(dllexport) GetScriptModuleTable(v
 #endif
 
 #if TARGET_AVIUTL2_PLUGIN
-
-#  if 0
-static void test_edit(struct aviutl2_edit_section *edit) {
-  gcmz_logf_info(
-      NULL,
-      NULL,
-      "width=%d, height=%d, rate=%d, scale=%d, sample_rate=%d, frame=%d, layer=%d, frame_max=%d, layer_max=%d",
-      edit->info->width,
-      edit->info->height,
-      edit->info->rate,
-      edit->info->scale,
-      edit->info->sample_rate,
-      edit->info->frame,
-      edit->info->layer,
-      edit->info->frame_max,
-      edit->info->layer_max);
-}
-#  endif
-
 static void project_load_handler(struct aviutl2_project_file *project) {
-  (void)project;
-  if (!g_api) {
-    return;
+  struct ov_error err = {0};
+  bool success = false;
+  wchar_t const *project_path = project->get_project_file_path();
+  size_t const path_len = project_path ? wcslen(project_path) : 0;
+  if (!path_len) {
+    if (g_project_path) {
+      g_project_path[0] = L'\0';
+    }
+  } else {
+    if (!OV_ARRAY_GROW(&g_project_path, path_len + 1)) {
+      OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
+      goto cleanup;
+    }
+    wcscpy(g_project_path, project_path);
   }
-#  if 0
-  // Trying to get it with the official API causes a deadlock,
-  // and calling it from another thread randomly crashes...
-  // Moreover, if the path to the project file is passed as a startup argument,
-  // project_load_handler is not called.
-  g_edit->call_edit_section(test_edit);
-#  endif
-  gcmz_do(update_api_project_data, NULL);
+  gcmz_do_sub(update_api_project_data, NULL);
+  success = true;
+cleanup:
+  if (!success) {
+    gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to handle project load"));
+    OV_ERROR_DESTROY(&err);
+  }
 }
 
 static int paste_from_clipboard_impl(void *userdata) {
@@ -2087,7 +2092,6 @@ void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host) {
   struct aviutl2_edit_handle *const edit = host->create_edit_handle();
   if (edit) {
     g_edit = edit;
-    gcmz_project_info_set_handle(g_edit);
   }
 
   // Signal delayed initialization thread that RegisterPlugin is complete

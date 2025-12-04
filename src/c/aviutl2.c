@@ -685,7 +685,6 @@ static void get_extended_project_info_internal(void *data) {
 bool gcmz_aviutl2_get_extended_project_info(int *display_frame,
                                             int *display_layer,
                                             int *display_zoom,
-                                            wchar_t const **project_path,
                                             struct ov_error *const err) {
   if (!is_valid_version_info()) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
@@ -696,7 +695,6 @@ bool gcmz_aviutl2_get_extended_project_info(int *display_frame,
       .display_frame = display_frame,
       .display_layer = display_layer,
       .display_zoom = display_zoom,
-      .project_path = project_path,
   };
 
   gcmz_do_blocking(get_extended_project_info_internal, &ctx);
@@ -723,49 +721,6 @@ void gcmz_aviutl2_set_display_zoom(int zoom) {
     return;
   }
   gcmz_do_blocking(call_set_display_zoom, (void *)&zoom);
-}
-
-static void get_simulated_edit_info_internal(void *data) {
-  struct aviutl2_edit_info *info = (struct aviutl2_edit_info *)data;
-  if (!info || !is_valid_version_info()) {
-    return;
-  }
-
-  info->width = get_project_data_int(g_version_info.width_offset);
-  info->height = get_project_data_int(g_version_info.height_offset);
-  info->rate = get_project_data_int(g_version_info.video_rate_offset);
-  info->scale = get_project_data_int(g_version_info.video_scale_offset);
-  info->sample_rate = get_project_data_int(g_version_info.sample_rate_offset);
-  info->frame = get_project_data_int(g_version_info.cursor_frame_offset);
-  info->layer = get_project_data_int(g_version_info.display_layer_offset);
-  info->frame_max = -1;
-  info->layer_max = -1;
-}
-
-static bool simulated_call_edit_section(void (*func_proc_edit)(struct aviutl2_edit_section *edit)) {
-  if (!func_proc_edit) {
-    return false;
-  }
-  if (!is_valid_version_info()) {
-    return false;
-  }
-
-  struct aviutl2_edit_info info = {0};
-  gcmz_do_blocking(get_simulated_edit_info_internal, &info);
-  func_proc_edit(&(struct aviutl2_edit_section){
-      .info = &info,
-  });
-  return true;
-}
-
-struct aviutl2_edit_handle *gcmz_aviutl2_create_simulated_edit_handle(void) {
-  if (!is_valid_version_info()) {
-    return NULL;
-  }
-  static struct aviutl2_edit_handle h = {
-      .call_edit_section = simulated_call_edit_section,
-  };
-  return &h;
 }
 
 typedef void (*log_func)(char const *category, wchar_t const *format, ...);

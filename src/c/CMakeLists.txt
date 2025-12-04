@@ -178,7 +178,6 @@ add_library(gcmzdrops SHARED
   json.c
   lodepng.c
   logf.c
-  project_info.c
   lua.c
   lua_api.c
   luautil.c
@@ -401,7 +400,7 @@ target_link_libraries(test_api PRIVATE
 )
 add_test(NAME test_api COMMAND test_api)
 
-add_executable(test_copy copy_test.c config.c json.c aviutl2.c ini_sign.c do.c api.c analyze.c analyze_meta.c drop.c gcmz_dataobj.c file.c style_config.c ini_reader.c isotime.c lua.c lua_api.c luautil.c dataobj.c dataobj_stream.c datauri.c sniffer.c temp.c lodepng.c logf.c project_info.c)
+add_executable(test_copy copy_test.c config.c json.c aviutl2.c ini_sign.c do.c api.c analyze.c analyze_meta.c drop.c gcmz_dataobj.c file.c style_config.c ini_reader.c isotime.c lua.c lua_api.c luautil.c dataobj.c dataobj_stream.c datauri.c sniffer.c temp.c lodepng.c logf.c)
 target_link_libraries(test_copy PRIVATE
   gcmzdrops_intf
   "${LUAJIT_DLL}"

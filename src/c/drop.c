@@ -63,7 +63,6 @@ struct placeholder_entry {
 struct gcmz_drop {
   gcmz_drop_dataobj_extract_fn extract_fn;
   gcmz_drop_cleanup_temp_file_fn cleanup_fn;
-  gcmz_drop_project_data_provider_fn project_data_fn;
   gcmz_drop_file_manage_fn file_manage_fn;
   void *callback_userdata;
   struct gcmz_lua_context *lua_context;
@@ -1259,7 +1258,6 @@ cleanup:
 
 struct gcmz_drop *gcmz_drop_create(gcmz_drop_dataobj_extract_fn const extract_fn,
                                    gcmz_drop_cleanup_temp_file_fn const cleanup_fn,
-                                   gcmz_drop_project_data_provider_fn const project_data_fn,
                                    gcmz_drop_file_manage_fn const file_manage_fn,
                                    void *const callback_userdata,
                                    struct gcmz_lua_context *const lua_context,
@@ -1283,7 +1281,6 @@ struct gcmz_drop *gcmz_drop_create(gcmz_drop_dataobj_extract_fn const extract_fn
     *d = (struct gcmz_drop){
         .extract_fn = extract_fn,
         .cleanup_fn = cleanup_fn,
-        .project_data_fn = project_data_fn,
         .file_manage_fn = file_manage_fn,
         .callback_userdata = callback_userdata,
         .lua_context = lua_context,

@@ -7,6 +7,8 @@
 #include <ovl/file.h>
 #include <ovutf.h>
 
+#include <aviutl2_plugin2.h>
+
 #include "luautil.h"
 
 #ifdef __GNUC__
@@ -40,12 +42,12 @@ static int gcmz_lua_get_project_data(lua_State *L) {
   }
 
   struct ov_error err = {0};
-  char *path_utf8 = NULL;
+  struct aviutl2_edit_info edit_info = {0};
+  char *project_path = NULL;
   int result = -1;
 
   {
-    struct gcmz_project_data data = {0};
-    if (!g_lua_api_options.get_project_data(&data, g_lua_api_options.userdata, &err)) {
+    if (!g_lua_api_options.get_project_data(&edit_info, &project_path, g_lua_api_options.userdata, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
@@ -53,47 +55,37 @@ static int gcmz_lua_get_project_data(lua_State *L) {
     lua_createtable(L, 0, 10);
 
     lua_pushstring(L, "width");
-    lua_pushinteger(L, data.width);
+    lua_pushinteger(L, edit_info.width);
     lua_settable(L, -3);
 
     lua_pushstring(L, "height");
-    lua_pushinteger(L, data.height);
+    lua_pushinteger(L, edit_info.height);
     lua_settable(L, -3);
 
-    lua_pushstring(L, "video_rate");
-    lua_pushinteger(L, data.video_rate);
+    lua_pushstring(L, "rate");
+    lua_pushinteger(L, edit_info.rate);
     lua_settable(L, -3);
 
-    lua_pushstring(L, "video_scale");
-    lua_pushinteger(L, data.video_scale);
+    lua_pushstring(L, "scale");
+    lua_pushinteger(L, edit_info.scale);
     lua_settable(L, -3);
 
     lua_pushstring(L, "sample_rate");
-    lua_pushinteger(L, data.sample_rate);
+    lua_pushinteger(L, edit_info.sample_rate);
     lua_settable(L, -3);
 
-    // Convert project_path to UTF-8
-    if (data.project_path) {
-      size_t const path_wlen = wcslen(data.project_path);
-      size_t const path_len = ov_wchar_to_utf8_len(data.project_path, path_wlen);
-      if (path_len > 0) {
-        if (!OV_ARRAY_GROW(&path_utf8, path_len + 1)) {
-          OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
-          goto cleanup;
-        }
-        ov_wchar_to_utf8(data.project_path, path_wlen, path_utf8, path_len + 1, NULL);
-        lua_pushstring(L, "project_path");
-        lua_pushstring(L, path_utf8);
-        lua_settable(L, -3);
-      }
+    if (project_path && *project_path) {
+      lua_pushstring(L, "project_path");
+      lua_pushstring(L, project_path);
+      lua_settable(L, -3);
     }
   }
 
   result = 1;
 
 cleanup:
-  if (path_utf8) {
-    OV_ARRAY_DESTROY(&path_utf8);
+  if (project_path) {
+    OV_ARRAY_DESTROY(&project_path);
   }
   return result < 0 ? gcmz_luafn_err(L, &err) : result;
 }

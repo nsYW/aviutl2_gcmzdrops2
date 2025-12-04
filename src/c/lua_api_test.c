@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <aviutl2_plugin2.h>
+
 #ifdef __GNUC__
 #  ifndef __has_warning
 #    define __has_warning(x) 0
@@ -24,23 +26,21 @@
 #endif // __GNUC__
 
 // Mock callback for get_project_data
-static bool mock_get_project_data(struct gcmz_project_data *project_data, void *userdata, struct ov_error *err) {
+static bool
+mock_get_project_data(struct aviutl2_edit_info *edit_info, char **project_path, void *userdata, struct ov_error *err) {
   (void)userdata;
   (void)err;
   // Return mock project data
-  *project_data = (struct gcmz_project_data){
+  *edit_info = (struct aviutl2_edit_info){
       .width = 1920,
       .height = 1080,
-      .video_rate = 30,
-      .video_scale = 1,
+      .rate = 30,
+      .scale = 1,
       .sample_rate = 48000,
-      .audio_ch = 2,
-      .cursor_frame = 0,
-      .display_frame = 0,
-      .display_layer = 0,
-      .display_zoom = 10000,
-      .project_path = NULL,
   };
+  if (project_path) {
+    *project_path = NULL;
+  }
   return true;
 }
 

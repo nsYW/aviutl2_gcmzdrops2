@@ -111,13 +111,6 @@ static bool mock_cleanup_temp_files(wchar_t const *const path, void *userdata, s
   return true;
 }
 
-static bool mock_project_data_provider(struct gcmz_project_data *data, void *userdata, struct ov_error *const err) {
-  (void)data;
-  (void)userdata;
-  (void)err;
-  return true;
-}
-
 static void test_drop_null_safety(void) {
   struct ov_error err = {0};
   gcmz_drop_destroy(NULL);
@@ -161,8 +154,7 @@ static void test_drop_real_com_integration(void) {
     goto cleanup;
   }
 
-  d = gcmz_drop_create(
-      mock_dataobj_extract, mock_cleanup_temp_files, mock_project_data_provider, NULL, NULL, NULL, &err);
+  d = gcmz_drop_create(mock_dataobj_extract, mock_cleanup_temp_files, NULL, NULL, NULL, &err);
   if (!TEST_CHECK(d != NULL)) {
     OV_ERROR_DESTROY(&err);
     goto cleanup;

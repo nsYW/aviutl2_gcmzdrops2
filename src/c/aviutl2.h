@@ -78,14 +78,12 @@ wchar_t const *gcmz_aviutl2_get_project_path(void);
  * @param display_frame [out] Current display frame, can be NULL if not needed
  * @param display_layer [out] Current display layer, can be NULL if not needed
  * @param display_zoom [out] Current display zoom, can be NULL if not needed
- * @param project_path [out] Project path (do not free, internal pointer), can be NULL if not needed
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
 NODISCARD bool gcmz_aviutl2_get_extended_project_info(int *display_frame,
                                                       int *display_layer,
                                                       int *display_zoom,
-                                                      wchar_t const **project_path,
                                                       struct ov_error *const err);
 
 /**
@@ -108,13 +106,6 @@ void gcmz_aviutl2_set_display_layer(int layer);
  * @param zoom Zoom level to set
  */
 void gcmz_aviutl2_set_display_zoom(int zoom);
-
-/**
- * @brief Create simulated aviutl2_edit_handle for accessing project info
- *
- * @return Pointer to aviutl2_edit_handle, or NULL if unavailable
- */
-struct aviutl2_edit_handle *gcmz_aviutl2_create_simulated_edit_handle(void);
 
 /**
  * @brief Create simulated aviutl2_log_handle

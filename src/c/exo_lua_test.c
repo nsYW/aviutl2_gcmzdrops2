@@ -16,6 +16,8 @@ static void test_fini(void);
 
 #include <string.h>
 
+#include <aviutl2_plugin2.h>
+
 #ifdef __GNUC__
 #  ifndef __has_warning
 #    define __has_warning(x) 0
@@ -46,10 +48,14 @@ static void test_fini(void);
 
 static lua_State *g_L = NULL;
 
-static bool mock_get_project_data(struct gcmz_project_data *project_data, void *userdata, struct ov_error *err) {
+static bool
+mock_get_project_data(struct aviutl2_edit_info *edit_info, char **project_path, void *userdata, struct ov_error *err) {
   (void)userdata;
   (void)err;
-  *project_data = (struct gcmz_project_data){0};
+  *edit_info = (struct aviutl2_edit_info){0};
+  if (project_path) {
+    *project_path = NULL;
+  }
   return true;
 }
 

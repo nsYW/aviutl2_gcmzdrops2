@@ -5,6 +5,7 @@
 #include "gcmz_types.h"
 
 struct lua_State;
+struct aviutl2_edit_info;
 
 /**
  * @brief Callback function type for creating temporary file
@@ -29,12 +30,14 @@ typedef char *(*gcmz_lua_api_save_path_provider_fn)(void *userdata, char const *
 /**
  * @brief Callback function type for getting project data
  *
- * @param project_data [out] Project data to fill
+ * @param edit_info [out] Project data to fill
+ * @param project_path [out] Allocated UTF-8 project path (caller must free with OV_ARRAY_DESTROY), can be NULL
  * @param userdata User-provided data
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
-typedef NODISCARD bool (*gcmz_lua_api_get_project_data_fn)(struct gcmz_project_data *project_data,
+typedef NODISCARD bool (*gcmz_lua_api_get_project_data_fn)(struct aviutl2_edit_info *edit_info,
+                                                           char **project_path,
                                                            void *userdata,
                                                            struct ov_error *err);
 

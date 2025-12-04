@@ -33,18 +33,6 @@ typedef bool (*gcmz_drop_dataobj_extract_fn)(void *dataobj,
 typedef bool (*gcmz_drop_cleanup_temp_file_fn)(wchar_t const *const path, void *userdata, struct ov_error *const err);
 
 /**
- * @brief Project data provider callback for EXO conversion
- *
- * @param project_data Project data structure to fill
- * @param userdata User data passed to the function
- * @param err [out] Error information on failure
- * @return true on success, false on failure
- */
-typedef bool (*gcmz_drop_project_data_provider_fn)(struct gcmz_project_data *project_data,
-                                                   void *userdata,
-                                                   struct ov_error *const err);
-
-/**
  * @brief File management callback
  *
  * @param source_file Source file path to process
@@ -63,7 +51,6 @@ typedef bool (*gcmz_drop_file_manage_fn)(wchar_t const *source_file,
  *
  * @param extract_fn Data object extraction function
  * @param cleanup_fn Temporary files cleanup function
- * @param project_data_fn Project data provider function for EXO conversion
  * @param file_manage_fn File management function for copying/managing files (optional, can be NULL)
  * @param callback_userdata Shared user data for all callback functions
  * @param lua_context Lua context for scripting hooks (optional, can be NULL)
@@ -72,7 +59,6 @@ typedef bool (*gcmz_drop_file_manage_fn)(wchar_t const *source_file,
  */
 struct gcmz_drop *gcmz_drop_create(gcmz_drop_dataobj_extract_fn const extract_fn,
                                    gcmz_drop_cleanup_temp_file_fn const cleanup_fn,
-                                   gcmz_drop_project_data_provider_fn const project_data_fn,
                                    gcmz_drop_file_manage_fn const file_manage_fn,
                                    void *const callback_userdata,
                                    struct gcmz_lua_context *const lua_context,
