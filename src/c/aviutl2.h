@@ -66,13 +66,6 @@ NODISCARD HWND gcmz_aviutl2_get_main_window(void);
 NODISCARD size_t gcmz_aviutl2_find_manager_windows(void **window, size_t window_len, struct ov_error *const err);
 
 /**
- * @brief Get current project file path
- *
- * @return Project file path, or NULL if no project is open (do not free, internal pointer)
- */
-wchar_t const *gcmz_aviutl2_get_project_path(void);
-
-/**
  * @brief Get extended project information not provided by official API
  *
  * @param display_frame [out] Current display frame, can be NULL if not needed
@@ -106,13 +99,6 @@ void gcmz_aviutl2_set_display_layer(int layer);
  * @param zoom Zoom level to set
  */
 void gcmz_aviutl2_set_display_zoom(int zoom);
-
-/**
- * @brief Create simulated aviutl2_log_handle
- *
- * @return Pointer to aviutl2_log_handle, or NULL if unavailable
- */
-struct aviutl2_log_handle *gcmz_aviutl2_create_simulated_log_handle(void);
 
 /**
  * @brief Get detected AviUtl2 version name

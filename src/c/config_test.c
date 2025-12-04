@@ -16,9 +16,18 @@
 #endif
 
 static wchar_t const *g_test_project_path = NULL;
-static wchar_t const *mock_get_project_path(void *userdata) {
+static wchar_t *mock_get_project_path(void *userdata) {
   (void)userdata;
-  return g_test_project_path;
+  if (!g_test_project_path) {
+    return NULL;
+  }
+  size_t const len = wcslen(g_test_project_path);
+  wchar_t *result = NULL;
+  if (!OV_ARRAY_GROW(&result, len + 1)) {
+    return NULL;
+  }
+  wcscpy(result, g_test_project_path);
+  return result;
 }
 
 static void test_init(void) {

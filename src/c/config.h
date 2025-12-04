@@ -9,10 +9,13 @@ struct gcmz_config;
 /**
  * @brief Project path retrieval function
  *
+ * The returned string is allocated by the provider and must be freed by the caller
+ * using OV_ARRAY_DESTROY.
+ *
  * @param userdata User data passed to the function
- * @return Project path, or NULL on failure
+ * @return Newly allocated project path string (caller takes ownership), or NULL on failure
  */
-typedef NATIVE_CHAR const *(*gcmz_project_path_provider_fn)(void *userdata);
+typedef NATIVE_CHAR *(*gcmz_project_path_provider_fn)(void *userdata);
 
 /**
  * @brief Configuration creation options

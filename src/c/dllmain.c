@@ -1009,6 +1009,8 @@ static void debug_output_info(void) {
                    info.layer,
                    info.frame_max,
                    info.layer_max);
+    gcmz_logf_info(
+        NULL, NULL, "g_project_path: %ls", (g_project_path && g_project_path[0] != L'\0') ? g_project_path : L"(null)");
   } else {
     gcmz_logf_warn(NULL, NULL, "g_edit is not available");
   }
@@ -1028,8 +1030,6 @@ static void debug_output_info(void) {
     gcmz_logf_warn(&err, NULL, "gcmz_aviutl2_get_extended_project_info failed");
     OV_ERROR_DESTROY(&err);
   }
-  wchar_t const *project_path = gcmz_aviutl2_get_project_path();
-  gcmz_logf_info(NULL, NULL, "[extended] project_path: %ls", project_path ? project_path : L"(null)");
 }
 
 static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_event *const event) {
@@ -1840,9 +1840,18 @@ static void finalize(void *const userdata) {
   }
 }
 
-static NATIVE_CHAR const *get_project_path(void *userdata) {
+static NATIVE_CHAR *get_project_path(void *userdata) {
   (void)userdata;
-  return gcmz_aviutl2_get_project_path();
+  if (!g_project_path || g_project_path[0] == L'\0') {
+    return NULL;
+  }
+  size_t const len = wcslen(g_project_path);
+  NATIVE_CHAR *result = NULL;
+  if (!OV_ARRAY_GROW(&result, len + 1)) {
+    return NULL;
+  }
+  wcscpy(result, g_project_path);
+  return result;
 }
 
 static bool get_script_directory_path(wchar_t **const script_dir, struct ov_error *const err) {
@@ -2057,13 +2066,6 @@ static bool initialize(struct ov_error *const err) {
   // If g_aviutl2_version was not set by InitializePlugin, get it from detected version
   if (g_aviutl2_version == 0) {
     g_aviutl2_version = gcmz_aviutl2_get_detected_version_uint32();
-  }
-
-  if (!g_logger) {
-    g_logger = gcmz_aviutl2_create_simulated_log_handle();
-    if (g_logger) {
-      gcmz_logf_set_handle(g_logger);
-    }
   }
 
   main_window = gcmz_aviutl2_get_main_window();

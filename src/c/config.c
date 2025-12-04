@@ -288,17 +288,21 @@ static SYSTEMTIME const *placeholder_callback_get_local_time(struct placeholder_
 static int placeholder_expand_projectdir(struct gcmz_config const *const config,
                                          NATIVE_CHAR replacement_buf[placeholder_buffer_size],
                                          struct ov_error *err) {
+  NATIVE_CHAR *project_path = NULL;
   int result = -1;
 
   {
-    NATIVE_CHAR const *const project_path =
-        config->project_path_getter ? config->project_path_getter(config->project_path_userdata) : NULL;
+    project_path = config->project_path_getter ? config->project_path_getter(config->project_path_userdata) : NULL;
     if (!project_path) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
       goto cleanup;
     }
 
     NATIVE_CHAR const *const last_sep = ovl_path_find_last_path_sep(project_path);
+    if (!last_sep) {
+      OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
+      goto cleanup;
+    }
     size_t const dir_len = (size_t)(last_sep - project_path);
     if (dir_len >= placeholder_buffer_size) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
@@ -311,6 +315,9 @@ static int placeholder_expand_projectdir(struct gcmz_config const *const config,
   }
 
 cleanup:
+  if (project_path) {
+    OV_ARRAY_DESTROY(&project_path);
+  }
   return result;
 }
 

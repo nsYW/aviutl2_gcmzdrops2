@@ -43,10 +43,6 @@ static struct version_info {
 
   // Absolute addresses in target program
   size_t layer_window_context;
-  size_t log_verbose_func;
-  size_t log_info_func;
-  size_t log_warn_func;
-  size_t log_error_func;
   size_t set_frame_cursor_func;
   size_t set_display_layer_func;
   size_t set_display_zoom_func;
@@ -56,15 +52,8 @@ static struct version_info {
 
   // Offsets relative to main_context
   size_t project_data_offset;
-  size_t project_path_offset;
 
   // Offsets relative to project_data structure
-  size_t video_rate_offset;
-  size_t video_scale_offset;
-  size_t width_offset;
-  size_t height_offset;
-  size_t sample_rate_offset;
-  size_t cursor_frame_offset;
   size_t display_frame_offset;
   size_t display_layer_offset;
   size_t display_zoom_offset;
@@ -440,22 +429,11 @@ detect_version(HMODULE aviutl2_module, struct version_info *const dest, struct o
     if (check_version_info(aviutl2_module, &temp_info, module_size)) {
       LOAD_FIELD(version, parse_dec_u32);
       LOAD_FIELD(layer_window_context, parse_hex_zu);
-      LOAD_FIELD(log_verbose_func, parse_hex_zu);
-      LOAD_FIELD(log_info_func, parse_hex_zu);
-      LOAD_FIELD(log_warn_func, parse_hex_zu);
-      LOAD_FIELD(log_error_func, parse_hex_zu);
       LOAD_FIELD(set_frame_cursor_func, parse_hex_zu);
       LOAD_FIELD(set_display_layer_func, parse_hex_zu);
       LOAD_FIELD(set_display_zoom_func, parse_hex_zu);
       LOAD_FIELD(project_context_offset, parse_hex_zu);
       LOAD_FIELD(project_data_offset, parse_hex_zu);
-      LOAD_FIELD(project_path_offset, parse_hex_zu);
-      LOAD_FIELD(video_rate_offset, parse_hex_zu);
-      LOAD_FIELD(video_scale_offset, parse_hex_zu);
-      LOAD_FIELD(width_offset, parse_hex_zu);
-      LOAD_FIELD(height_offset, parse_hex_zu);
-      LOAD_FIELD(sample_rate_offset, parse_hex_zu);
-      LOAD_FIELD(cursor_frame_offset, parse_hex_zu);
       LOAD_FIELD(display_frame_offset, parse_hex_zu);
       LOAD_FIELD(display_layer_offset, parse_hex_zu);
       LOAD_FIELD(display_zoom_offset, parse_hex_zu);
@@ -534,18 +512,6 @@ static void set_project_data_int(size_t const offset, int const value) {
     return;
   }
   *(int *)calc_offset(internal_obj, offset) = value;
-}
-
-static wchar_t const *get_project_path_internal(void) {
-  struct aviutl2_main_context *ctx = get_main_context();
-  if (!ctx) {
-    return NULL;
-  }
-  wchar_t const **ptr = (wchar_t const **)calc_offset(ctx, g_version_info.project_path_offset);
-  if (!ptr) {
-    return NULL;
-  }
-  return *ptr;
 }
 
 static void call_set_cursor_frame(void *userdata) {
@@ -645,21 +611,10 @@ void gcmz_aviutl2_cleanup(void) {
 
 HWND gcmz_aviutl2_get_main_window(void) { return g_aviutl2_window[0]; }
 
-wchar_t const *gcmz_aviutl2_get_project_path(void) {
-  if (!is_valid_version_info()) {
-    return NULL;
-  }
-  if (!g_version_info.project_path_offset) {
-    return NULL;
-  }
-  return get_project_path_internal();
-}
-
 struct extended_project_info_context {
   int *display_frame;
   int *display_layer;
   int *display_zoom;
-  wchar_t const **project_path;
 };
 
 static void get_extended_project_info_internal(void *data) {
@@ -676,9 +631,6 @@ static void get_extended_project_info_internal(void *data) {
   }
   if (ctx->display_zoom && g_version_info.display_zoom_offset) {
     *ctx->display_zoom = get_project_data_int(g_version_info.display_zoom_offset);
-  }
-  if (ctx->project_path && g_version_info.project_path_offset) {
-    *ctx->project_path = get_project_path_internal();
   }
 }
 
@@ -721,95 +673,6 @@ void gcmz_aviutl2_set_display_zoom(int zoom) {
     return;
   }
   gcmz_do_blocking(call_set_display_zoom, (void *)&zoom);
-}
-
-typedef void (*log_func)(char const *category, wchar_t const *format, ...);
-struct aviutl2_log_context {
-  struct aviutl2_log_handle base;
-  log_func verbose;
-  log_func info;
-  log_func warn;
-  log_func error;
-  char category[64];
-};
-
-#define DEFINE_WRAPPED_LOG_FUNC(func_name)                                                                             \
-  static void wrapped_log_##func_name(struct aviutl2_log_handle *handle, wchar_t const *message) {                     \
-    struct aviutl2_log_context *ctx = (struct aviutl2_log_context *)(void *)handle;                                    \
-    ctx->func_name(ctx->category, L"%s", message);                                                                     \
-  }
-
-DEFINE_WRAPPED_LOG_FUNC(verbose)
-DEFINE_WRAPPED_LOG_FUNC(info)
-DEFINE_WRAPPED_LOG_FUNC(warn)
-DEFINE_WRAPPED_LOG_FUNC(error)
-
-static void write_category(char category[64]) {
-  HMODULE module = NULL;
-  NATIVE_CHAR *module_path = NULL;
-  struct ov_error err = {0};
-  bool success = false;
-
-  {
-    if (!ovl_os_get_hinstance_from_fnptr((void *)write_category, (void **)&module, &err)) {
-      OV_ERROR_ADD_TRACE(&err);
-      goto cleanup;
-    }
-    if (!ovl_path_get_module_name(&module_path, (void *)module, &err)) {
-      OV_ERROR_ADD_TRACE(&err);
-      goto cleanup;
-    }
-    if (!module_path || *module_path == '\0') {
-      OV_ERROR_SET_GENERIC(&err, ov_error_generic_unexpected);
-      goto cleanup;
-    }
-    NATIVE_CHAR const *filename = ovl_path_extract_file_name(module_path);
-    if (!filename || *filename == '\0') {
-      filename = module_path;
-    }
-    static char const prefix[] = "Plugin::";
-    size_t const prefix_len = sizeof(prefix) - 1;
-    enum { category_buf_size = 64 };
-    size_t const space = category_buf_size - prefix_len - 1;
-    size_t const filename_len = wcslen(filename);
-    size_t const filename_utf8_len = ov_wchar_to_utf8_len(filename, filename_len);
-    if (!filename_utf8_len || filename_utf8_len > space) {
-      OV_ERROR_SET_GENERIC(&err, ov_error_generic_fail);
-      goto cleanup;
-    }
-    strcpy(category, prefix);
-    ov_wchar_to_utf8(filename, filename_len, category + prefix_len, space + 1, NULL);
-    success = true;
-  }
-
-cleanup:
-  if (!success) {
-    OV_ERROR_REPORT(&err, NULL);
-    strcpy(category, "Plugin::Unknown");
-  }
-  if (module_path) {
-    OV_ARRAY_DESTROY(&module_path);
-  }
-}
-
-struct aviutl2_log_handle *gcmz_aviutl2_create_simulated_log_handle(void) {
-  static struct aviutl2_log_context ctx;
-  if (!ctx.error && is_valid_version_info()) {
-    ctx.verbose = (log_func)calc_offset(g_aviutl2_module, g_version_info.log_verbose_func);
-    ctx.info = (log_func)calc_offset(g_aviutl2_module, g_version_info.log_info_func);
-    ctx.warn = (log_func)calc_offset(g_aviutl2_module, g_version_info.log_warn_func);
-    ctx.error = (log_func)calc_offset(g_aviutl2_module, g_version_info.log_error_func);
-    ctx.base.log = NULL;
-    ctx.base.verbose = wrapped_log_verbose;
-    ctx.base.info = wrapped_log_info;
-    ctx.base.warn = wrapped_log_warn;
-    ctx.base.error = wrapped_log_error;
-    write_category(ctx.category);
-  }
-  if (!ctx.base.verbose || !ctx.base.info || !ctx.base.warn || !ctx.base.error) {
-    return NULL;
-  }
-  return (struct aviutl2_log_handle *)(void *)&ctx;
 }
 
 char const *gcmz_aviutl2_get_detected_version(void) {
