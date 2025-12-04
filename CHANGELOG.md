@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- get_edit_info / get_project_file_path を API を使うように改善
+
 ## 2.0.0alpha4 2025-12-03
 
 - AviUtl ExEdit2.0beta22a に対応
