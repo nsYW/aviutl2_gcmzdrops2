@@ -185,12 +185,10 @@ static bool determine_cursor_position(int const target_layer,
     }
 
     int layer;
-    if (target_layer < 0) {
-      if (target_layer == INT_MIN) {
-        layer = edit_info.layer; // Current selected layer
-      } else {
-        layer = -target_layer + display_layer;
-      }
+    if (target_layer == 0) {
+      layer = edit_info.layer; // Current selected layer
+    } else if (target_layer < 0) {
+      layer = -target_layer + display_layer;
     } else {
       layer = target_layer - 1;
     }
@@ -1274,7 +1272,7 @@ static void tray_menu_test_external_api_object(void *userdata, struct gcmz_tray_
 
       struct gcmz_api_request_params params = {
           .files = files,
-          .layer = 3,
+          .layer = 0,
           .frame_advance = 0,
           .use_exo_converter = false,
           .err = &err,
