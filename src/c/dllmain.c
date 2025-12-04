@@ -453,7 +453,7 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const ctx,
     // Handle single .object files via official API
     // When api_ctx->layer is negative, it means relative positioning from the current scroll position.
     // To obtain that position, data retrieval in an environment where g_unknown_binary == false is required,
-    // but it seems unnecessary to support that level, so it is excluded.
+    // but it seems unnecessary to support that functionality, so it is excluded.
     if (is_single_object_file(ctx->final_files) && api_ctx->layer >= 0) {
       // Try to create object via official API
       if (create_object_via_official_api(ctx->final_files, api_ctx->layer, &err)) {
@@ -1073,8 +1073,10 @@ static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_eve
 }
 
 static void tray_menu_test_complete_external_api(struct gcmz_api_request_params *const params) {
-  (void)params;
   gcmz_logf_info(NULL, "%s", "%s", "API request test completed");
+  if (params && params->files) {
+    gcmz_file_list_destroy(&params->files);
+  }
 }
 
 static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callback_event *const event) {
@@ -1136,7 +1138,6 @@ static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callbac
 
       request_api(&params, tray_menu_test_complete_external_api);
       files = NULL;
-      temp_path = NULL;
     }
 
     result = true;
@@ -1153,6 +1154,151 @@ static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callbac
     }
     if (!result) {
       gcmz_logf_error(&err, "%s", "%s", "failed to test API request");
+      OV_ERROR_REPORT(&err, NULL);
+    }
+    break;
+  }
+  }
+}
+
+static void tray_menu_test_complete_external_api_object(struct gcmz_api_request_params *const params) {
+  gcmz_logf_info(NULL, "%s", "%s", "API request test (object) completed");
+  if (params && params->files) {
+    gcmz_file_list_destroy(&params->files);
+  }
+}
+
+static void tray_menu_test_external_api_object(void *userdata, struct gcmz_tray_callback_event *const event) {
+  (void)userdata;
+  static wchar_t label[64];
+  switch (event->type) {
+  case gcmz_tray_callback_query_info:
+    if (label[0] == L'\0') {
+      ov_snprintf_wchar(label, sizeof(label) / sizeof(label[0]), L"%s", L"%s", "Test API Request (Object)");
+    }
+    event->result.query_info.label = label;
+    event->result.query_info.enabled = true;
+    break;
+
+  case gcmz_tray_callback_clicked: {
+    struct ov_error err = {0};
+    struct ovl_file *file = NULL;
+    wchar_t *temp_path = NULL;
+    struct gcmz_file_list *files = NULL;
+    bool result = false;
+
+    {
+      // clang-format off
+      char const *utf8_text =
+          "[0]\r\n"
+          "layer=3\r\n"
+          "frame=187,267\r\n"
+          "[0.0]\r\n"
+          "effect.name=図形\r\n"
+          "図形の種類=四角形\r\n"
+          "サイズ=100\r\n"
+          "縦横比=0.00\r\n"
+          "ライン幅=4000\r\n"
+          "色=ffffff\r\n"
+          "角を丸くする=0\r\n"
+          "[0.1]\r\n"
+          "effect.name=標準描画\r\n"
+          "X=0.00\r\n"
+          "Y=0.00\r\n"
+          "Z=0.00\r\n"
+          "Group=1\r\n"
+          "中心X=0.00\r\n"
+          "中心Y=0.00\r\n"
+          "中心Z=0.00\r\n"
+          "X軸回転=0.00\r\n"
+          "Y軸回転=0.00\r\n"
+          "Z軸回転=0.00\r\n"
+          "拡大率=100.000\r\n"
+          "縦横比=0.000\r\n"
+          "透明度=0.00\r\n"
+          "合成モード=通常\r\n"
+          "[1]\r\n"
+          "layer=2\r\n"
+          "frame=187,267\r\n"
+          "[1.0]\r\n"
+          "effect.name=図形\r\n"
+          "図形の種類=円\r\n"
+          "サイズ=100\r\n"
+          "縦横比=0.00\r\n"
+          "ライン幅=4000\r\n"
+          "色=ffffff\r\n"
+          "角を丸くする=0\r\n"
+          "[1.1]\r\n"
+          "effect.name=標準描画\r\n"
+          "X=0.00\r\n"
+          "Y=0.00\r\n"
+          "Z=0.00\r\n"
+          "Group=1\r\n"
+          "中心X=0.00\r\n"
+          "中心Y=0.00\r\n"
+          "中心Z=0.00\r\n"
+          "X軸回転=0.00\r\n"
+          "Y軸回転=0.00\r\n"
+          "Z軸回転=0.00\r\n"
+          "拡大率=100.000\r\n"
+          "縦横比=0.000\r\n"
+          "透明度=0.00\r\n"
+          "合成モード=通常\r\n";
+      // clang-format on
+      size_t const utf8_len = strlen(utf8_text);
+      size_t written = 0;
+
+      if (!ovl_file_create_temp(L"test.object", &file, &temp_path, &err)) {
+        OV_ERROR_ADD_TRACE(&err);
+        goto cleanup;
+      }
+
+      if (!ovl_file_write(file, utf8_text, utf8_len, &written, &err)) {
+        OV_ERROR_ADD_TRACE(&err);
+        goto cleanup;
+      }
+
+      ovl_file_close(file);
+      file = NULL;
+
+      files = gcmz_file_list_create(&err);
+      if (!files) {
+        OV_ERROR_ADD_TRACE(&err);
+        goto cleanup;
+      }
+
+      if (!gcmz_file_list_add_temporary(files, temp_path, L"application/x-aviutl-object", &err)) {
+        OV_ERROR_ADD_TRACE(&err);
+        goto cleanup;
+      }
+
+      struct gcmz_api_request_params params = {
+          .files = files,
+          .layer = 3,
+          .frame_advance = 0,
+          .use_exo_converter = false,
+          .err = &err,
+          .userdata = NULL,
+      };
+
+      request_api(&params, tray_menu_test_complete_external_api_object);
+      files = NULL;
+    }
+
+    result = true;
+
+  cleanup:
+    if (file) {
+      ovl_file_close(file);
+    }
+    if (temp_path) {
+      OV_ARRAY_DESTROY(&temp_path);
+    }
+    if (files) {
+      gcmz_file_list_destroy(&files);
+    }
+    if (!result) {
+      gcmz_logf_error(&err, "%s", "%s", "failed to test API request (object)");
       OV_ERROR_REPORT(&err, NULL);
     }
     break;
@@ -2059,6 +2205,10 @@ static bool initialize(struct ov_error *const err) {
     goto cleanup;
   }
   if (!gcmz_tray_add_menu_item(g_tray, tray_menu_test_external_api, NULL, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    goto cleanup;
+  }
+  if (!gcmz_tray_add_menu_item(g_tray, tray_menu_test_external_api_object, NULL, err)) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
   }
