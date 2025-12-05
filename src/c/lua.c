@@ -542,21 +542,50 @@ cleanup:
 }
 
 /**
- * @brief Add a handler script file as a module
+ * @brief Execute chunk on stack and register as module
  *
- * @param ctx Lua context
- * @param filepath Path to the script file
+ * Expects a compiled chunk at stack top. Executes it, verifies it returns
+ * a table, and registers it as a module.
+ *
+ * @param L Lua state (compiled chunk at stack top)
+ * @param name Module name for registration
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
-static bool add_handler_script_file(struct gcmz_lua_context *ctx, NATIVE_CHAR const *filepath, struct ov_error *err) {
-  lua_State *L = ctx->L;
+static bool execute_and_register_module(lua_State *L, char const *name, struct ov_error *err) {
+  if (!gcmz_lua_pcall(L, 0, 1, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    return false;
+  }
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    OV_ERROR_SET(err,
+                 ov_error_type_generic,
+                 ov_error_generic_fail,
+                 pgettext("lua_script", "handler script must return a table"));
+    return false;
+  }
+  if (!add_module_entry(L, name, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @brief Add a handler script file as a module
+ *
+ * @param L Lua state
+ * @param filepath Path to the script file (native encoding)
+ * @param err [out] Error information on failure
+ * @return true on success, false on failure
+ */
+static bool add_handler_script_file(lua_State *L, wchar_t const *filepath, struct ov_error *err) {
   int base_top = lua_gettop(L);
-  char *name = NULL;
+  char *name = NULL; // "@filepath" - use name+1 for just filepath
   bool result = false;
 
   {
-    // Convert filepath to UTF-8 for name, prefixed with '@'
     size_t const filepath_len = wcslen(filepath);
     size_t const utf8_len = ov_wchar_to_utf8_len(filepath, filepath_len);
     if (utf8_len == 0) {
@@ -568,27 +597,24 @@ static bool add_handler_script_file(struct gcmz_lua_context *ctx, NATIVE_CHAR co
       goto cleanup;
     }
     name[0] = '@';
-    if (ov_wchar_to_utf8(filepath, filepath_len, name + 1, utf8_len + 1, NULL) == 0) {
-      OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
-      goto cleanup;
-    }
-    if (!gcmz_lua_loadfile(L, filepath, err)) {
+    ov_wchar_to_utf8(filepath, filepath_len, name + 1, utf8_len + 1, NULL);
+
+    lua_getglobal(L, "loadfile");
+    lua_pushstring(L, name + 1); // Pass filepath without '@' prefix
+    if (!gcmz_lua_pcall(L, 1, 2, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-    if (!gcmz_lua_pcall(L, 0, 1, err)) {
-      OV_ERROR_ADD_TRACE(err);
+    // loadfile returns (chunk, nil) on success, (nil, errmsg) on failure
+    if (lua_isnil(L, -2)) {
+      char const *const errmsg = lua_isstring(L, -1) ? lua_tostring(L, -1) : "unknown error";
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, errmsg);
+      lua_pop(L, 2);
       goto cleanup;
     }
-    if (!lua_istable(L, -1)) {
-      lua_pop(L, 1);
-      OV_ERROR_SET(err,
-                   ov_error_type_generic,
-                   ov_error_generic_fail,
-                   pgettext("lua_script", "handler script must return a table"));
-      goto cleanup;
-    }
-    if (!add_module_entry(L, name, err)) {
+    lua_pop(L, 1); // Pop nil, now chunk is at stack top
+
+    if (!execute_and_register_module(L, name, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -600,6 +626,39 @@ cleanup:
   if (name) {
     OV_ARRAY_DESTROY(&name);
   }
+  lua_settop(L, base_top);
+  return result;
+}
+
+/**
+ * @brief Add a handler script from a string as a module
+ *
+ * @param L Lua state
+ * @param name Module name for registration
+ * @param script Script content
+ * @param script_len Script content length
+ * @param err [out] Error information on failure
+ * @return true on success, false on failure
+ */
+static bool
+add_handler_script(lua_State *L, char const *name, char const *script, size_t script_len, struct ov_error *err) {
+  int base_top = lua_gettop(L);
+  bool result = false;
+
+  if (luaL_loadbuffer(L, script, script_len, name) != LUA_OK) {
+    char const *const error_msg = lua_isstring(L, -1) ? lua_tostring(L, -1) : "unknown Lua error";
+    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, error_msg);
+    lua_pop(L, 1);
+    goto cleanup;
+  }
+  if (!execute_and_register_module(L, name, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    goto cleanup;
+  }
+
+  result = true;
+
+cleanup:
   lua_settop(L, base_top);
   return result;
 }
@@ -625,13 +684,13 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
   int base_top = lua_gettop(L);
   size_t script_dir_len = wcslen(script_dir);
   wchar_t *filepath = NULL;
-  char *utf8_buffer = NULL;
+  char *utf8_dir = NULL;
   HANDLE find_handle = INVALID_HANDLE_VALUE;
   bool result = false;
 
   {
     // Convert script_dir to UTF-8
-    if (!gcmz_wchar_to_utf8(script_dir, &utf8_buffer, err)) {
+    if (!gcmz_wchar_to_utf8(script_dir, &utf8_dir, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -643,14 +702,14 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
       lua_getfield(L, -1, "path");
       char const *const current_path = lua_tostring(L, -1);
       lua_pop(L, 1);
-      lua_pushfstring(L, "%s;%s\\?.lua", current_path ? current_path : "", utf8_buffer);
+      lua_pushfstring(L, "%s;%s\\?.lua", current_path ? current_path : "", utf8_dir);
       lua_setfield(L, -2, "path");
 
       // package.cpath = package.cpath .. ';' .. script_dir .. '\\?.dll'
       lua_getfield(L, -1, "cpath");
       char const *const current_cpath = lua_tostring(L, -1);
       lua_pop(L, 1);
-      lua_pushfstring(L, "%s;%s\\?.dll", current_cpath ? current_cpath : "", utf8_buffer);
+      lua_pushfstring(L, "%s;%s\\?.dll", current_cpath ? current_cpath : "", utf8_dir);
       lua_setfield(L, -2, "cpath");
     }
     lua_pop(L, 1); // Pop package table
@@ -688,7 +747,7 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
       wcscpy(filepath + script_dir_len + 1, find_data.cFileName);
 
       struct ov_error local_err = {0};
-      if (!add_handler_script_file(ctx, filepath, &local_err)) {
+      if (!add_handler_script_file(L, filepath, &local_err)) {
         gcmz_logf_warn(&local_err, "%1$s", pgettext("lua_script", "failed to add module from %1$ls"), filepath);
         OV_ERROR_DESTROY(&local_err);
         continue;
@@ -712,8 +771,8 @@ cleanup:
   if (filepath) {
     OV_ARRAY_DESTROY(&filepath);
   }
-  if (utf8_buffer) {
-    OV_ARRAY_DESTROY(&utf8_buffer);
+  if (utf8_dir) {
+    OV_ARRAY_DESTROY(&utf8_dir);
   }
   return result;
 }
@@ -1182,52 +1241,19 @@ NODISCARD bool gcmz_lua_add_handler_script(struct gcmz_lua_context *const ctx,
                                            char const *const script,
                                            size_t const script_len,
                                            struct ov_error *const err) {
-  if (!ctx || !ctx->L || !name || !script) {
+  if (!ctx || !ctx->L || !name || !script || !script_len) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
-
-  lua_State *L = ctx->L;
-  int base_top = lua_gettop(L);
-  bool result = false;
-
-  {
-    // Load and execute the script
-    if (luaL_loadbuffer(L, script, script_len, name) != LUA_OK) {
-      char const *const error_msg = lua_isstring(L, -1) ? lua_tostring(L, -1) : "unknown Lua error";
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, error_msg);
-      lua_pop(L, 1);
-      goto cleanup;
-    }
-
-    if (!gcmz_lua_pcall(L, 0, 1, err)) {
-      OV_ERROR_ADD_TRACE(err);
-      goto cleanup;
-    }
-
-    // Verify the script returned a table
-    if (!lua_istable(L, -1)) {
-      lua_pop(L, 1);
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_invalid_argument, "handler script must return a table");
-      goto cleanup;
-    }
-
-    // Add module entry and sort
-    if (!add_module_entry(L, name, err)) {
-      OV_ERROR_ADD_TRACE(err);
-      goto cleanup;
-    }
-    if (!sort_modules(L, err)) {
-      OV_ERROR_ADD_TRACE(err);
-      goto cleanup;
-    }
+  if (!add_handler_script(ctx->L, name, script, script_len, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    return false;
   }
-
-  result = true;
-
-cleanup:
-  lua_settop(L, base_top);
-  return result;
+  if (!sort_modules(ctx->L, err)) {
+    OV_ERROR_ADD_TRACE(err);
+    return false;
+  }
+  return true;
 }
 
 NODISCARD bool gcmz_lua_add_handler_script_file(struct gcmz_lua_context *const ctx,
@@ -1237,7 +1263,7 @@ NODISCARD bool gcmz_lua_add_handler_script_file(struct gcmz_lua_context *const c
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
-  if (!add_handler_script_file(ctx, filepath, err)) {
+  if (!add_handler_script_file(ctx->L, filepath, err)) {
     OV_ERROR_ADD_TRACE(err);
     return false;
   }

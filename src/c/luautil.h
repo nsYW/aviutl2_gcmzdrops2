@@ -76,20 +76,6 @@ NODISCARD bool gcmz_utf8_to_wchar(char const *src, wchar_t **dest, struct ov_err
 NODISCARD bool gcmz_wchar_to_utf8(wchar_t const *src, char **dest, struct ov_error *err);
 
 /**
- * @brief Load a Lua script file
- *
- * Loads a Lua script from a file using native file APIs, properly handling
- * UTF-8 file paths. Also skips UTF-8 BOM if present at the beginning of the file.
- * The chunk name is automatically generated from the filepath in "@filepath" format.
- *
- * @param L Lua state
- * @param filepath Path to the Lua script file (native character encoding)
- * @param err [out] Error information on failure
- * @return true on success (compiled chunk on stack), false on failure
- */
-bool gcmz_lua_loadfile(lua_State *const L, NATIVE_CHAR const *const filepath, struct ov_error *const err);
-
-/**
  * @brief Setup UTF-8 aware file loading functions for Lua
  *
  * Replaces standard Lua file loading functions with UTF-8 aware versions

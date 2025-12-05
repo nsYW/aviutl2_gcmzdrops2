@@ -207,7 +207,7 @@ static char const *lua_file_reader(lua_State *const L, void *const ud, size_t *c
   return buf;
 }
 
-bool gcmz_lua_loadfile(lua_State *const L, NATIVE_CHAR const *const filepath, struct ov_error *const err) {
+static bool lua_loadfile_w(lua_State *const L, NATIVE_CHAR const *const filepath, struct ov_error *const err) {
   if (!L || !filepath || filepath[0] == L'\0') {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
@@ -308,7 +308,7 @@ static int lua_loadfile_utf8(lua_State *L) {
       goto cleanup;
     }
 
-    if (!gcmz_lua_loadfile(L, filepath_w, &err)) {
+    if (!lua_loadfile_w(L, filepath_w, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
@@ -347,7 +347,7 @@ static int lua_dofile_utf8(lua_State *L) {
       goto cleanup;
     }
 
-    if (!gcmz_lua_loadfile(L, filepath_w, &err)) {
+    if (!lua_loadfile_w(L, filepath_w, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
@@ -513,7 +513,7 @@ static int lua_searcher_utf8(lua_State *L) {
       goto cleanup;
     }
 
-    if (!gcmz_lua_loadfile(L, found_path, &err)) {
+    if (!lua_loadfile_w(L, found_path, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
