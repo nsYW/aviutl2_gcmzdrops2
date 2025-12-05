@@ -2494,12 +2494,160 @@ cleanup:
   }
 }
 
+static void test_c_root_searcher(void) {
+  // Test package.loaders[4] (all-in-one C searcher)
+  // This searcher loads submodules from a parent DLL
+  // e.g., require("test_🌙.sub") loads luaopen_test_🌙_sub from test_🌙.dll
+
+  lua_State *L = NULL;
+  wchar_t *exe_dir = NULL;
+  wchar_t *dll_dir = NULL;
+  char *dll_dir_utf8 = NULL;
+  struct ov_error err = {0};
+
+  {
+    if (!get_exe_directory(&exe_dir, &err)) {
+      OV_ERROR_REPORT(&err, NULL);
+      return;
+    }
+
+    // Build DLL directory path
+    size_t const dll_dir_len = wcslen(exe_dir) + wcslen(L"\\test_data\\lua_modules") + 1;
+    if (!OV_ARRAY_GROW(&dll_dir, dll_dir_len)) {
+      goto cleanup;
+    }
+    wcscpy(dll_dir, exe_dir);
+    wcscat(dll_dir, L"\\test_data\\lua_modules");
+
+    L = luaL_newstate();
+    if (!TEST_CHECK(L != NULL)) {
+      goto cleanup;
+    }
+    luaL_openlibs(L);
+    gcmz_lua_setup_utf8_funcs(L);
+
+    // Convert DLL directory to UTF-8
+    size_t const dll_dir_wlen = wcslen(dll_dir);
+    size_t const dll_dir_utf8_len = ov_wchar_to_utf8_len(dll_dir, dll_dir_wlen);
+    if (!dll_dir_utf8_len || !OV_ARRAY_GROW(&dll_dir_utf8, dll_dir_utf8_len + 1)) {
+      goto cleanup;
+    }
+    if (!ov_wchar_to_utf8(dll_dir, dll_dir_wlen, dll_dir_utf8, dll_dir_utf8_len + 1, NULL)) {
+      goto cleanup;
+    }
+
+    // Add test module directory to package.cpath
+    lua_getglobal(L, "package");
+    lua_getfield(L, -1, "cpath");
+    char const *const current_cpath = lua_tostring(L, -1);
+    lua_pop(L, 1);
+
+    char cpath_buffer[4096];
+    ov_snprintf_char(
+        cpath_buffer, sizeof(cpath_buffer), NULL, "%s;%s\\?.dll", current_cpath ? current_cpath : "", dll_dir_utf8);
+    lua_pushstring(L, cpath_buffer);
+    lua_setfield(L, -2, "cpath");
+    lua_pop(L, 1);
+
+    // Test 1: Load parent module first (via loaders[3])
+    {
+      TEST_CASE("load parent module");
+      lua_getglobal(L, "require");
+      lua_pushstring(L, "test_\xF0\x9F\x8C\x99"); // test_🌙 in UTF-8
+      if (!TEST_CHECK(lua_pcall(L, 1, 1, 0) == LUA_OK)) {
+        char const *err_msg = lua_tostring(L, -1);
+        TEST_MSG("Failed to load parent module: %s", err_msg ? err_msg : "unknown error");
+        lua_pop(L, 1);
+        goto cleanup;
+      }
+      TEST_CHECK(lua_istable(L, -1));
+      lua_pop(L, 1);
+    }
+
+    // Test 2: Load submodule (via loaders[4] - all-in-one searcher)
+    {
+      TEST_CASE("load submodule via loaders[4]");
+      lua_getglobal(L, "require");
+      lua_pushstring(L, "test_\xF0\x9F\x8C\x99.sub"); // test_🌙.sub in UTF-8
+      if (!TEST_CHECK(lua_pcall(L, 1, 1, 0) == LUA_OK)) {
+        char const *err_msg = lua_tostring(L, -1);
+        TEST_MSG("Failed to load submodule: %s", err_msg ? err_msg : "unknown error");
+        lua_pop(L, 1);
+        goto cleanup;
+      }
+
+      // Verify submodule loaded correctly
+      TEST_CHECK(lua_istable(L, -1));
+
+      // Check submodule has expected fields
+      lua_getfield(L, -1, "name");
+      if (TEST_CHECK(lua_isstring(L, -1))) {
+        char const *name = lua_tostring(L, -1);
+        TEST_CHECK(name != NULL && strcmp(name, "sub") == 0);
+        TEST_MSG("Submodule name: %s", name ? name : "(null)");
+      }
+      lua_pop(L, 1);
+
+      // Check submodule has hello function
+      lua_getfield(L, -1, "hello");
+      TEST_CHECK(lua_isfunction(L, -1));
+      lua_pop(L, 1);
+
+      // Call hello function
+      lua_getfield(L, -1, "hello");
+      if (TEST_CHECK(lua_pcall(L, 0, 1, 0) == LUA_OK)) {
+        char const *result = lua_tostring(L, -1);
+        TEST_CHECK(result != NULL && strstr(result, "sub") != NULL);
+        TEST_MSG("hello() returned: %s", result ? result : "(null)");
+        lua_pop(L, 1);
+      }
+      lua_pop(L, 1);
+    }
+
+    // Test 3: Verify submodule is cached in package.loaded
+    {
+      TEST_CASE("submodule cached in package.loaded");
+      lua_getglobal(L, "package");
+      lua_getfield(L, -1, "loaded");
+      lua_getfield(L, -1, "test_\xF0\x9F\x8C\x99.sub");
+      TEST_CHECK(lua_istable(L, -1));
+      lua_pop(L, 3);
+    }
+
+    // Test 4: Require submodule again (should return cached version)
+    {
+      TEST_CASE("submodule cached on second require");
+      lua_getglobal(L, "require");
+      lua_pushstring(L, "test_\xF0\x9F\x8C\x99.sub");
+      if (TEST_CHECK(lua_pcall(L, 1, 1, 0) == LUA_OK)) {
+        TEST_CHECK(lua_istable(L, -1));
+        lua_pop(L, 1);
+      }
+    }
+  }
+
+cleanup:
+  if (L) {
+    lua_close(L);
+  }
+  if (dll_dir) {
+    OV_ARRAY_DESTROY(&dll_dir);
+  }
+  if (dll_dir_utf8) {
+    OV_ARRAY_DESTROY(&dll_dir_utf8);
+  }
+  if (exe_dir) {
+    OV_ARRAY_DESTROY(&exe_dir);
+  }
+}
+
 TEST_LIST = {
     {"utf8_funcs_ascii_compatibility", test_utf8_funcs_ascii_compatibility},
     {"unicode_paths", test_unicode_paths},
     {"io_unicode_paths", test_io_unicode_paths},
     {"io_simple_style", test_io_simple_style},
     {"c_module_cleanup", test_c_module_cleanup},
+    {"c_root_searcher", test_c_root_searcher},
     {"os_funcs_ascii_compatibility", test_os_funcs_ascii_compatibility},
     {"os_unicode_paths", test_os_unicode_paths},
     {"io_popen_tmpfile", test_io_popen_tmpfile},

@@ -12,8 +12,7 @@
 
 #include <string.h>
 
-static NODISCARD bool
-gcmz_error_to_string(struct ov_error const *const e, char **const dest, struct ov_error *const err) {
+static NODISCARD bool error_to_string(struct ov_error const *const e, char **const dest, struct ov_error *const err) {
   if (!e || !dest) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
@@ -68,7 +67,7 @@ int gcmz_luafn_err_(lua_State *const L, struct ov_error *const e, char const *co
   lua_pushstring(L, "():\r\n");
 
   // Convert error to string
-  if (!gcmz_error_to_string(e, &error_msg, &err)) {
+  if (!error_to_string(e, &error_msg, &err)) {
     OV_ERROR_DESTROY(&err);
     lua_pushstring(L, "failed to build error message");
   } else {
@@ -366,6 +365,54 @@ cleanup:
 }
 
 /**
+ * @brief Convert module name to path format
+ *
+ * Replaces '.' with directory separator in module name.
+ * If len is 0, uses strlen(modname).
+ *
+ * @param modname Module name
+ * @param len Length of module name to convert (0 for full string)
+ * @param dest [in/out] Pointer to destination buffer (can be reused)
+ * @param err [out] Error information on failure
+ * @return true on success, false on failure
+ */
+static bool modname_to_path(char const *modname, size_t len, char **dest, struct ov_error *err) {
+  if (!modname || !dest) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+  if (len == 0) {
+    len = strlen(modname);
+  }
+  if (!OV_ARRAY_GROW(dest, len + 1)) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
+    return false;
+  }
+  for (size_t i = 0; i < len; i++) {
+    (*dest)[i] = (modname[i] == '.') ? '\\' : modname[i];
+  }
+  (*dest)[len] = '\0';
+  return true;
+}
+
+/**
+ * @brief Get package.path or package.cpath
+ *
+ * @param L Lua state
+ * @param field "path" or "cpath"
+ * @return Path string or NULL if not found (pushes error message on stack if NULL)
+ */
+static char const *get_package_field(lua_State *L, char const *field) {
+  lua_getglobal(L, "package");
+  lua_getfield(L, -1, field);
+  char const *const path = lua_tostring(L, -1);
+  if (!path) {
+    lua_pushfstring(L, "\n\tno package.%s", field);
+  }
+  return path;
+}
+
+/**
  * @brief Search for a file in package.path/cpath pattern
  *
  * Replaces '?' with module name and checks if file exists.
@@ -450,46 +497,33 @@ static int lua_searcher_utf8(lua_State *L) {
   int result = -1;
 
   {
-    // Get package.path
-    lua_getglobal(L, "package");
-    lua_getfield(L, -1, "path");
-    char const *const path = lua_tostring(L, -1);
+    char const *const path = get_package_field(L, "path");
     if (!path) {
-      lua_pushstring(L, "\n\tno package.path");
       result = 1;
       goto cleanup;
     }
 
-    // Replace '.' with directory separator in module name
-    size_t const modname_len = strlen(modname);
-    if (!OV_ARRAY_GROW(&modname_path, modname_len + 1)) {
-      OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
+    if (!modname_to_path(modname, 0, &modname_path, &err)) {
+      OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
-    }
-    for (size_t i = 0; i <= modname_len; i++) {
-      modname_path[i] = (modname[i] == '.') ? '\\' : modname[i];
     }
 
     if (!search_path(L, modname_path, path, &found_path)) {
-      // Return the "tried" error message (already on stack from search_path)
       result = 1;
       goto cleanup;
     }
 
-    // Load the file
     if (!gcmz_lua_loadfile(L, found_path, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
 
-    // Convert found_path back to UTF-8 for the second return value
     if (!gcmz_wchar_to_utf8(found_path, &utf8_path, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
     lua_pushstring(L, utf8_path);
 
-    // Return: loader function, filename
     result = 2;
   }
 
@@ -535,12 +569,12 @@ static bool build_luaopen_name(char const *modname, char **dest) {
 /**
  * @brief Registry key for loaded C module handles table
  */
-#define GCMZ_LOADED_C_HANDLES_KEY "gcmz_loaded_c_handles"
+static char const loaded_c_module_handles_key[] = "gcmz_loaded_c_module_handles";
 
 /**
  * @brief Registry key for HMODULE userdata metatable
  */
-#define GCMZ_HMODULE_METATABLE_KEY "gcmz_hmodule_mt"
+static char const c_module_metatable_key[] = "gcmz_c_hmodule_mt";
 
 /**
  * @brief __gc metamethod for HMODULE userdata
@@ -571,7 +605,7 @@ static void register_c_module_handle(lua_State *L, HMODULE hmodule, char const *
   }
 
   // Get loaded C handles table from registry
-  lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_LOADED_C_HANDLES_KEY);
+  lua_getfield(L, LUA_REGISTRYINDEX, loaded_c_module_handles_key);
   if (!lua_istable(L, -1)) {
     lua_pop(L, 1);
     return; // Table should exist, something went wrong
@@ -582,13 +616,65 @@ static void register_c_module_handle(lua_State *L, HMODULE hmodule, char const *
   *handle_ptr = hmodule;
 
   // Set metatable with __gc
-  lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_HMODULE_METATABLE_KEY);
+  lua_getfield(L, LUA_REGISTRYINDEX, c_module_metatable_key);
   lua_setmetatable(L, -2);
 
   // Store userdata in table[modname]
   lua_setfield(L, -2, modname);
 
   lua_pop(L, 1); // Pop loaded C handles table
+}
+
+/**
+ * @brief Load C library and find luaopen function
+ *
+ * Common routine for loading C libraries with UTF-8 path support.
+ *
+ * @param L Lua state
+ * @param modname Full module name (for luaopen function name)
+ * @param found_path Wide-char path to the DLL
+ * @param try_short_name If true, try short function name (last component) on failure
+ * @param hmodule_out [out] Loaded module handle (caller must free on error)
+ * @return luaopen function on success, NULL on failure (pushes error message on stack)
+ */
+static lua_CFunction load_c_library(
+    lua_State *L, char const *modname, wchar_t const *found_path, bool try_short_name, HMODULE *hmodule_out) {
+  char *funcname = NULL;
+
+  HMODULE hmodule = LoadLibraryW(found_path);
+  if (!hmodule) {
+    DWORD const error_code = GetLastError();
+    lua_pushfstring(L, "\n\terror loading module '%s': LoadLibrary failed (error %d)", modname, (int)error_code);
+    return NULL;
+  }
+
+  if (!build_luaopen_name(modname, &funcname)) {
+    FreeLibrary(hmodule);
+    lua_pushstring(L, "\n\tout of memory");
+    return NULL;
+  }
+
+  lua_CFunction luaopen_func = (lua_CFunction)(void *)GetProcAddress(hmodule, funcname);
+
+  if (!luaopen_func && try_short_name) {
+    char const *lastdot = strrchr(modname, '.');
+    if (lastdot && build_luaopen_name(lastdot + 1, &funcname)) {
+      luaopen_func = (lua_CFunction)(void *)GetProcAddress(hmodule, funcname);
+    }
+  }
+
+  if (!luaopen_func) {
+    build_luaopen_name(modname, &funcname);
+    lua_pushfstring(
+        L, "\n\terror loading module '%s': %s not found in DLL", modname, funcname ? funcname : "luaopen_?");
+    OV_ARRAY_DESTROY(&funcname);
+    FreeLibrary(hmodule);
+    return NULL;
+  }
+
+  OV_ARRAY_DESTROY(&funcname);
+  *hmodule_out = hmodule;
+  return luaopen_func;
 }
 
 /**
@@ -601,80 +687,38 @@ static int lua_c_searcher_utf8(lua_State *L) {
 
   wchar_t *found_path = NULL;
   char *modname_path = NULL;
-  char *funcname = NULL;
   char *utf8_path = NULL;
   HMODULE hmodule = NULL;
   struct ov_error err = {0};
   int result = -1;
 
   {
-    // Get package.cpath
-    lua_getglobal(L, "package");
-    lua_getfield(L, -1, "cpath");
-    char const *const cpath = lua_tostring(L, -1);
+    char const *const cpath = get_package_field(L, "cpath");
     if (!cpath) {
-      lua_pushstring(L, "\n\tno package.cpath");
       result = 1;
       goto cleanup;
     }
 
-    // Replace '.' with directory separator in module name
-    size_t const modname_len = strlen(modname);
-    if (!OV_ARRAY_GROW(&modname_path, modname_len + 1)) {
-      OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
+    if (!modname_to_path(modname, 0, &modname_path, &err)) {
+      OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
-    }
-    for (size_t i = 0; i <= modname_len; i++) {
-      modname_path[i] = (modname[i] == '.') ? '\\' : modname[i];
     }
 
     if (!search_path(L, modname_path, cpath, &found_path)) {
-      // Return the "tried" error message
       result = 1;
       goto cleanup;
     }
 
-    // Load the DLL
-    hmodule = LoadLibraryW(found_path);
-    if (!hmodule) {
-      DWORD const error_code = GetLastError();
-      lua_pushfstring(L, "\n\terror loading module '%s': LoadLibrary failed (error %d)", modname, (int)error_code);
-      result = 1;
-      goto cleanup;
-    }
-
-    // Get the luaopen function name
-    if (!build_luaopen_name(modname, &funcname)) {
-      OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
-      goto cleanup;
-    }
-
-    // Find the luaopen function
-    lua_CFunction luaopen_func = (lua_CFunction)(void *)GetProcAddress(hmodule, funcname);
+    lua_CFunction luaopen_func = load_c_library(L, modname, found_path, true, &hmodule);
     if (!luaopen_func) {
-      // Try with just the last component (e.g., "baz" from "foo.bar.baz")
-      char const *lastdot = strrchr(modname, '.');
-      if (lastdot) {
-        if (build_luaopen_name(lastdot + 1, &funcname)) {
-          luaopen_func = (lua_CFunction)(void *)GetProcAddress(hmodule, funcname);
-        }
-      }
-    }
-
-    if (!luaopen_func) {
-      // Rebuild full funcname for error message
-      build_luaopen_name(modname, &funcname);
-      lua_pushfstring(
-          L, "\n\terror loading module '%s': %s not found in DLL", modname, funcname ? funcname : "luaopen_?");
       result = 1;
       goto cleanup;
     }
 
     register_c_module_handle(L, hmodule, modname);
     lua_pushcfunction(L, luaopen_func);
-    hmodule = NULL; // Ownership transferred to Lua
+    hmodule = NULL;
 
-    // Convert found_path back to UTF-8 for the second return value
     if (!gcmz_wchar_to_utf8(found_path, &utf8_path, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -695,8 +739,83 @@ cleanup:
   if (modname_path) {
     OV_ARRAY_DESTROY(&modname_path);
   }
-  if (funcname) {
-    OV_ARRAY_DESTROY(&funcname);
+  if (utf8_path) {
+    OV_ARRAY_DESTROY(&utf8_path);
+  }
+  return result < 0 ? gcmz_luafn_err(L, &err) : result;
+}
+
+/**
+ * @brief package.loaders[4] - All-in-one C library searcher with UTF-8 support
+ *
+ * Searches for a C submodule in an already loaded C library.
+ * For example, require("a.b.c") will look for "a" library and call luaopen_a_b_c.
+ */
+static int lua_c_root_searcher_utf8(lua_State *L) {
+  char const *const modname = luaL_checkstring(L, 1);
+
+  char const *dot = strchr(modname, '.');
+  if (!dot) {
+    lua_pushstring(L, "\n\tno root module found");
+    return 1;
+  }
+
+  wchar_t *found_path = NULL;
+  char *root_path = NULL;
+  char *utf8_path = NULL;
+  HMODULE hmodule = NULL;
+  struct ov_error err = {0};
+  int result = -1;
+
+  {
+    size_t const root_len = (size_t)(dot - modname);
+
+    char const *const cpath = get_package_field(L, "cpath");
+    if (!cpath) {
+      result = 1;
+      goto cleanup;
+    }
+
+    if (!modname_to_path(modname, root_len, &root_path, &err)) {
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
+    }
+
+    if (!search_path(L, root_path, cpath, &found_path)) {
+      result = 1;
+      goto cleanup;
+    }
+
+    // All-in-one loader doesn't try short names - it must find full luaopen_a_b_c
+    lua_CFunction luaopen_func = load_c_library(L, modname, found_path, false, &hmodule);
+    if (!luaopen_func) {
+      result = 1;
+      goto cleanup;
+    }
+
+    register_c_module_handle(L, hmodule, modname);
+    lua_pushcfunction(L, luaopen_func);
+    hmodule = NULL;
+
+    if (!gcmz_wchar_to_utf8(found_path, &utf8_path, &err)) {
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
+    }
+    lua_pushstring(L, utf8_path);
+
+    result = 2;
+  }
+
+cleanup:
+  if (hmodule) {
+    FreeLibrary(hmodule);
+    hmodule = NULL;
+  }
+  if (found_path) {
+    OV_ARRAY_DESTROY(&found_path);
+  }
+  if (root_path) {
+    OV_ARRAY_DESTROY(&root_path);
   }
   if (utf8_path) {
     OV_ARRAY_DESTROY(&utf8_path);
@@ -711,25 +830,63 @@ cleanup:
 /**
  * @brief Registry key for file handle metatable
  */
-#define GCMZ_IO_FILE_HANDLE_KEY "gcmz_io_file"
+static char const io_file_handle_key[] = "gcmz_io_file";
+
+/**
+ * @brief File handle type
+ */
+enum io_file_type {
+  io_file_type_normal,
+  io_file_type_popen,
+};
 
 /**
  * @brief File handle structure stored as userdata
+ *
+ * This structure is used for both io.open and io.popen file handles.
+ * Flags are packed into a single byte using bit fields.
  */
-struct gcmz_io_file {
+struct io_file {
+  enum io_file_type type;
   HANDLE handle;
   bool is_closed;
   bool is_read;
   bool is_write;
   bool is_binary;
+  union {
+    struct {
+      HANDLE process_handle;
+    } popen;
+  } u;
 };
 
 /**
- * @brief Check if file handle is valid and open
+ * @brief Check if file handle is open and valid
  */
-static struct gcmz_io_file *check_file_handle(lua_State *L, int index, char const *func_name) {
-  struct gcmz_io_file *f = (struct gcmz_io_file *)luaL_checkudata(L, index, GCMZ_IO_FILE_HANDLE_KEY);
-  if (!f || f->is_closed || f->handle == INVALID_HANDLE_VALUE) {
+static inline bool io_file_is_open(struct io_file const *f) {
+  return f && !f->is_closed && f->handle != INVALID_HANDLE_VALUE;
+}
+
+/**
+ * @brief Get file handle from userdata, push nil + error message if invalid
+ * @return File handle if valid and open, NULL otherwise (nil + error pushed)
+ */
+static struct io_file *get_file_handle_soft(lua_State *L, int index) {
+  struct io_file *f = (struct io_file *)luaL_checkudata(L, index, io_file_handle_key);
+  if (!io_file_is_open(f)) {
+    lua_pushnil(L);
+    lua_pushstring(L, "attempt to use a closed file");
+    return NULL;
+  }
+  return f;
+}
+
+/**
+ * @brief Check if file handle is valid and open, throw error if not
+ */
+static struct io_file *check_file_handle(lua_State *L, int index, char const *func_name) {
+  struct io_file *f = (struct io_file *)luaL_checkudata(L, index, io_file_handle_key);
+  if (!io_file_is_open(f)) {
     luaL_error(L, "attempt to use a closed file in %s", func_name);
     return NULL;
   }
@@ -739,36 +896,44 @@ static struct gcmz_io_file *check_file_handle(lua_State *L, int index, char cons
 /**
  * @brief Get file handle from userdata without validity check
  */
-static struct gcmz_io_file *get_file_handle(lua_State *L, int index) {
-  return (struct gcmz_io_file *)luaL_testudata(L, index, GCMZ_IO_FILE_HANDLE_KEY);
+static struct io_file *get_file_handle(lua_State *L, int index) {
+  return (struct io_file *)luaL_testudata(L, index, io_file_handle_key);
 }
 
 /**
  * @brief file:close() method
  */
 static int io_file_close(lua_State *L) {
-  struct gcmz_io_file *f = (struct gcmz_io_file *)luaL_checkudata(L, 1, GCMZ_IO_FILE_HANDLE_KEY);
+  struct io_file *f = (struct io_file *)luaL_checkudata(L, 1, io_file_handle_key);
+
   if (!f) {
     lua_pushnil(L);
     lua_pushstring(L, "invalid file handle");
     return 2;
   }
-  if (f->is_closed || f->handle == INVALID_HANDLE_VALUE) {
+  if (!io_file_is_open(f)) {
     lua_pushnil(L);
     lua_pushstring(L, "attempt to use a closed file");
     return 2;
   }
 
-  BOOL ok = CloseHandle(f->handle);
-  f->handle = INVALID_HANDLE_VALUE;
-  f->is_closed = true;
-
-  if (!ok) {
-    lua_pushnil(L);
-    lua_pushfstring(L, "close failed (error %d)", (int)GetLastError());
-    return 2;
+  if (f->type == io_file_type_normal) {
+    if (!CloseHandle(f->handle)) {
+      lua_pushnil(L);
+      lua_pushfstring(L, "close failed (error %d)", (int)GetLastError());
+      return 2;
+    }
+  } else {
+    CloseHandle(f->handle);
+    if (f->u.popen.process_handle != INVALID_HANDLE_VALUE) {
+      WaitForSingleObject(f->u.popen.process_handle, INFINITE);
+      CloseHandle(f->u.popen.process_handle);
+      f->u.popen.process_handle = INVALID_HANDLE_VALUE;
+    }
   }
 
+  f->handle = INVALID_HANDLE_VALUE;
+  f->is_closed = true;
   lua_pushboolean(L, 1);
   return 1;
 }
@@ -777,12 +942,22 @@ static int io_file_close(lua_State *L) {
  * @brief __gc metamethod for file handle
  */
 static int io_file_gc(lua_State *L) {
-  struct gcmz_io_file *f = get_file_handle(L, 1);
-  if (f && !f->is_closed && f->handle != INVALID_HANDLE_VALUE) {
-    CloseHandle(f->handle);
-    f->handle = INVALID_HANDLE_VALUE;
-    f->is_closed = true;
+  struct io_file *f = get_file_handle(L, 1);
+
+  if (!io_file_is_open(f)) {
+    return 0;
   }
+
+  CloseHandle(f->handle);
+  f->handle = INVALID_HANDLE_VALUE;
+
+  if (f->type == io_file_type_popen && f->u.popen.process_handle != INVALID_HANDLE_VALUE) {
+    TerminateProcess(f->u.popen.process_handle, 1);
+    CloseHandle(f->u.popen.process_handle);
+    f->u.popen.process_handle = INVALID_HANDLE_VALUE;
+  }
+
+  f->is_closed = true;
   return 0;
 }
 
@@ -790,11 +965,19 @@ static int io_file_gc(lua_State *L) {
  * @brief __tostring metamethod for file handle
  */
 static int io_file_tostring(lua_State *L) {
-  struct gcmz_io_file *f = get_file_handle(L, 1);
+  struct io_file *f = get_file_handle(L, 1);
+
   if (!f) {
     lua_pushstring(L, "file (invalid)");
-  } else if (f->is_closed) {
+    return 1;
+  }
+  if (!io_file_is_open(f)) {
     lua_pushstring(L, "file (closed)");
+    return 1;
+  }
+
+  if (f->type == io_file_type_popen) {
+    lua_pushfstring(L, "file (popen %p)", (void *)f->handle);
   } else {
     lua_pushfstring(L, "file (%p)", (void *)f->handle);
   }
@@ -805,15 +988,19 @@ static int io_file_tostring(lua_State *L) {
  * @brief file:flush() method
  */
 static int io_file_flush(lua_State *L) {
-  struct gcmz_io_file *f = check_file_handle(L, 1, "flush");
+  struct io_file *f = check_file_handle(L, 1, "flush");
   if (!f) {
     return 2;
   }
 
-  if (!FlushFileBuffers(f->handle)) {
-    lua_pushnil(L);
-    lua_pushfstring(L, "flush failed (error %d)", (int)GetLastError());
-    return 2;
+  if (f->type == io_file_type_normal) {
+    if (!FlushFileBuffers(f->handle)) {
+      lua_pushnil(L);
+      lua_pushfstring(L, "flush failed (error %d)", (int)GetLastError());
+      return 2;
+    }
+  } else if (!f->is_read) {
+    FlushFileBuffers(f->handle);
   }
 
   lua_pushboolean(L, 1);
@@ -828,7 +1015,7 @@ static int io_file_flush(lua_State *L) {
  * @param keep_newline Whether to keep the newline character
  * @return true if read something, false on EOF
  */
-static bool read_line(struct gcmz_io_file *f, luaL_Buffer *B, bool keep_newline) {
+static bool read_line(struct io_file *f, luaL_Buffer *B, bool keep_newline) {
   bool has_data = false;
   char ch;
   DWORD bytes_read;
@@ -842,12 +1029,13 @@ static bool read_line(struct gcmz_io_file *f, luaL_Buffer *B, bool keep_newline)
       break;
     }
     if (ch == '\r') {
-      // Peek next character for CRLF
+      if (f->type == io_file_type_popen) {
+        break;
+      }
       char next_ch;
       DWORD next_read;
       if (ReadFile(f->handle, &next_ch, 1, &next_read, NULL) && next_read > 0) {
         if (next_ch != '\n') {
-          // Not CRLF, put back
           SetFilePointer(f->handle, -1, NULL, FILE_CURRENT);
         } else if (keep_newline) {
           luaL_addchar(B, '\n');
@@ -864,7 +1052,7 @@ static bool read_line(struct gcmz_io_file *f, luaL_Buffer *B, bool keep_newline)
 /**
  * @brief Read entire file content
  */
-static int read_all(lua_State *L, struct gcmz_io_file *f) {
+static int read_all(lua_State *L, struct io_file *f) {
   luaL_Buffer B;
   luaL_buffinit(L, &B);
 
@@ -881,7 +1069,7 @@ static int read_all(lua_State *L, struct gcmz_io_file *f) {
 /**
  * @brief Read specified number of bytes
  */
-static int read_bytes(lua_State *L, struct gcmz_io_file *f, size_t n) {
+static int read_bytes(lua_State *L, struct io_file *f, size_t n) {
   if (n == 0) {
     // Special case: check EOF
     DWORD file_pos = SetFilePointer(f->handle, 0, NULL, FILE_CURRENT);
@@ -923,7 +1111,7 @@ static int read_bytes(lua_State *L, struct gcmz_io_file *f, size_t n) {
 /**
  * @brief Read a number from file
  */
-static int read_number(lua_State *L, struct gcmz_io_file *f) {
+static int read_number(lua_State *L, struct io_file *f) {
   luaL_Buffer B;
   luaL_buffinit(L, &B);
 
@@ -993,7 +1181,7 @@ static int read_number(lua_State *L, struct gcmz_io_file *f) {
  * @brief file:read(...) method
  */
 static int io_file_read(lua_State *L) {
-  struct gcmz_io_file *f = check_file_handle(L, 1, "read");
+  struct io_file *f = get_file_handle_soft(L, 1);
   if (!f) {
     return 2;
   }
@@ -1081,7 +1269,7 @@ static int io_file_read(lua_State *L) {
  * @param len Length of data
  * @return true on success, false on failure
  */
-static bool write_data(struct gcmz_io_file *f, void const *data, size_t len) {
+static bool write_data(struct io_file *f, void const *data, size_t len) {
   DWORD bytes_written;
   return WriteFile(f->handle, data, (DWORD)len, &bytes_written, NULL) && bytes_written == (DWORD)len;
 }
@@ -1090,7 +1278,7 @@ static bool write_data(struct gcmz_io_file *f, void const *data, size_t len) {
  * @brief file:write(...) method
  */
 static int io_file_write(lua_State *L) {
-  struct gcmz_io_file *f = check_file_handle(L, 1, "write");
+  struct io_file *f = get_file_handle_soft(L, 1);
   if (!f) {
     return 2;
   }
@@ -1113,8 +1301,8 @@ static int io_file_write(lua_State *L) {
       str = luaL_checklstring(L, i, &len);
     }
 
-    // Binary mode or no newline: direct write
-    if (f->is_binary || !memchr(str, '\n', len)) {
+    // Binary mode, popen, or no newline: direct write
+    if (f->is_binary || f->type == io_file_type_popen || !memchr(str, '\n', len)) {
       if (!write_data(f, str, len)) {
         last_error = GetLastError();
         goto cleanup;
@@ -1165,7 +1353,7 @@ cleanup:
  * @brief file:seek([whence [, offset]]) method
  */
 static int io_file_seek(lua_State *L) {
-  struct gcmz_io_file *f = check_file_handle(L, 1, "seek");
+  struct io_file *f = check_file_handle(L, 1, "seek");
   if (!f) {
     return 2;
   }
@@ -1206,8 +1394,8 @@ static int io_file_setvbuf(lua_State *L) {
  * @brief file:lines() iterator function
  */
 static int io_file_lines_iterator(lua_State *L) {
-  struct gcmz_io_file *f = (struct gcmz_io_file *)lua_touserdata(L, lua_upvalueindex(1));
-  if (!f || f->is_closed || f->handle == INVALID_HANDLE_VALUE) {
+  struct io_file *f = (struct io_file *)lua_touserdata(L, lua_upvalueindex(1));
+  if (!io_file_is_open(f)) {
     return 0;
   }
 
@@ -1234,15 +1422,16 @@ static int io_file_lines(lua_State *L) {
 /**
  * @brief Create a new file handle userdata
  */
-static struct gcmz_io_file *create_file_handle(lua_State *L, HANDLE h, bool is_read, bool is_write, bool is_binary) {
-  struct gcmz_io_file *f = (struct gcmz_io_file *)lua_newuserdata(L, sizeof(struct gcmz_io_file));
+static struct io_file *create_file_handle(lua_State *L, HANDLE h, bool is_read, bool is_write, bool is_binary) {
+  struct io_file *f = (struct io_file *)lua_newuserdata(L, sizeof(struct io_file));
+  f->type = io_file_type_normal;
   f->handle = h;
   f->is_closed = false;
   f->is_read = is_read;
   f->is_write = is_write;
   f->is_binary = is_binary;
 
-  luaL_getmetatable(L, GCMZ_IO_FILE_HANDLE_KEY);
+  luaL_getmetatable(L, io_file_handle_key);
   lua_setmetatable(L, -2);
 
   return f;
@@ -1375,8 +1564,8 @@ cleanup:
 /**
  * @brief Store for io.input and io.output defaults
  */
-#define GCMZ_IO_INPUT_KEY "gcmz_io_input"
-#define GCMZ_IO_OUTPUT_KEY "gcmz_io_output"
+static char const io_input_key[] = "gcmz_io_input";
+static char const io_output_key[] = "gcmz_io_output";
 
 /**
  * @brief io.input([file]) - UTF-8 aware version
@@ -1384,7 +1573,7 @@ cleanup:
 static int io_input_utf8(lua_State *L) {
   if (lua_gettop(L) == 0) {
     // Return current default input
-    lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+    lua_getfield(L, LUA_REGISTRYINDEX, io_input_key);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 1);
       lua_pushnil(L);
@@ -1405,14 +1594,14 @@ static int io_input_utf8(lua_State *L) {
     }
     lua_pop(L, 1); // Pop nil (second return value)
     lua_pushvalue(L, -1);
-    lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+    lua_setfield(L, LUA_REGISTRYINDEX, io_input_key);
     return 1;
   }
 
   // Set file as default input
-  luaL_checkudata(L, 1, GCMZ_IO_FILE_HANDLE_KEY);
+  luaL_checkudata(L, 1, io_file_handle_key);
   lua_pushvalue(L, 1);
-  lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+  lua_setfield(L, LUA_REGISTRYINDEX, io_input_key);
   lua_pushvalue(L, 1);
   return 1;
 }
@@ -1423,7 +1612,7 @@ static int io_input_utf8(lua_State *L) {
 static int io_output_utf8(lua_State *L) {
   if (lua_gettop(L) == 0) {
     // Return current default output
-    lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+    lua_getfield(L, LUA_REGISTRYINDEX, io_output_key);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 1);
       lua_pushnil(L);
@@ -1444,14 +1633,14 @@ static int io_output_utf8(lua_State *L) {
     }
     lua_pop(L, 1); // Pop nil
     lua_pushvalue(L, -1);
-    lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+    lua_setfield(L, LUA_REGISTRYINDEX, io_output_key);
     return 1;
   }
 
   // Set file as default output
-  luaL_checkudata(L, 1, GCMZ_IO_FILE_HANDLE_KEY);
+  luaL_checkudata(L, 1, io_file_handle_key);
   lua_pushvalue(L, 1);
-  lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+  lua_setfield(L, LUA_REGISTRYINDEX, io_output_key);
   lua_pushvalue(L, 1);
   return 1;
 }
@@ -1462,7 +1651,7 @@ static int io_output_utf8(lua_State *L) {
 static int io_close_utf8(lua_State *L) {
   if (lua_gettop(L) == 0) {
     // No arguments - close default output
-    lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+    lua_getfield(L, LUA_REGISTRYINDEX, io_output_key);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 1);
       lua_pushnil(L);
@@ -1472,7 +1661,7 @@ static int io_close_utf8(lua_State *L) {
     // Stack now has [default_output] at position 1, continue to io_file_close
   } else if (lua_isnil(L, 1)) {
     // First argument is nil - close default output
-    lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+    lua_getfield(L, LUA_REGISTRYINDEX, io_output_key);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 1);
       lua_pushnil(L);
@@ -1490,7 +1679,7 @@ static int io_close_utf8(lua_State *L) {
  * @brief io.flush() - UTF-8 aware version
  */
 static int io_flush_utf8(lua_State *L) {
-  lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+  lua_getfield(L, LUA_REGISTRYINDEX, io_output_key);
   if (lua_isnil(L, -1)) {
     lua_pushnil(L);
     lua_pushstring(L, "no default output file");
@@ -1504,11 +1693,14 @@ static int io_flush_utf8(lua_State *L) {
  * @brief io.read(...) - UTF-8 aware version
  */
 static int io_read_utf8(lua_State *L) {
-  lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+  lua_getfield(L, LUA_REGISTRYINDEX, io_input_key);
   if (lua_isnil(L, -1)) {
-    lua_pushnil(L);
-    lua_pushstring(L, "no default input file");
-    return 2;
+    return luaL_error(L, "no default input file");
+  }
+  // Check if the file is closed
+  struct io_file *f = (struct io_file *)luaL_testudata(L, -1, io_file_handle_key);
+  if (!io_file_is_open(f)) {
+    return luaL_error(L, "default input file is closed");
   }
   lua_insert(L, 1);
   return io_file_read(L);
@@ -1518,11 +1710,14 @@ static int io_read_utf8(lua_State *L) {
  * @brief io.write(...) - UTF-8 aware version
  */
 static int io_write_utf8(lua_State *L) {
-  lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+  lua_getfield(L, LUA_REGISTRYINDEX, io_output_key);
   if (lua_isnil(L, -1)) {
-    lua_pushnil(L);
-    lua_pushstring(L, "no default output file");
-    return 2;
+    return luaL_error(L, "no default output file");
+  }
+  // Check if the file is closed
+  struct io_file *f = (struct io_file *)luaL_testudata(L, -1, io_file_handle_key);
+  if (!io_file_is_open(f)) {
+    return luaL_error(L, "default output file is closed");
   }
   lua_insert(L, 1);
   return io_file_write(L);
@@ -1561,7 +1756,7 @@ static int io_lines_file_iterator(lua_State *L) {
   luaL_buffinit(L, &B);
 
   // Create temporary file struct for read_line
-  struct gcmz_io_file f = {
+  struct io_file f = {
       .handle = state->handle,
       .is_closed = false,
       .is_read = true,
@@ -1588,7 +1783,7 @@ static int io_lines_file_iterator(lua_State *L) {
 static int io_lines_utf8(lua_State *L) {
   if (lua_gettop(L) == 0 || lua_isnil(L, 1)) {
     // Use default input
-    lua_getfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+    lua_getfield(L, LUA_REGISTRYINDEX, io_input_key);
     if (lua_isnil(L, -1)) {
       return luaL_error(L, "no default input file");
     }
@@ -1635,7 +1830,7 @@ static int io_lines_utf8(lua_State *L) {
  * @brief Setup file handle metatable
  */
 static void setup_io_file_metatable(lua_State *L) {
-  luaL_newmetatable(L, GCMZ_IO_FILE_HANDLE_KEY);
+  luaL_newmetatable(L, io_file_handle_key);
 
   // Methods
   lua_pushcfunction(L, io_file_close);
@@ -1671,370 +1866,19 @@ static void setup_io_file_metatable(lua_State *L) {
 // ============================================================================
 
 /**
- * @brief popen file handle structure stored as userdata
- */
-struct gcmz_popen_file {
-  HANDLE process_handle;
-  HANDLE pipe_handle;
-  bool is_closed;
-  bool is_read;
-};
-
-#define GCMZ_POPEN_FILE_HANDLE_KEY "gcmz_popen_file"
-
-/**
- * @brief popen file:close() method
- *
- * In Lua 5.1/LuaJIT, pclose returns just true on success.
- * In Lua 5.2+, it returns true/nil, "exit"/"signal", code.
- * We follow Lua 5.1 behavior for LuaJIT compatibility.
- */
-static int popen_file_close(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)luaL_checkudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  if (!f) {
-    lua_pushnil(L);
-    lua_pushstring(L, "invalid popen handle");
-    return 2;
-  }
-  if (f->is_closed) {
-    lua_pushnil(L);
-    lua_pushstring(L, "attempt to use a closed file");
-    return 2;
-  }
-
-  // Close pipe handle first
-  if (f->pipe_handle != INVALID_HANDLE_VALUE) {
-    CloseHandle(f->pipe_handle);
-    f->pipe_handle = INVALID_HANDLE_VALUE;
-  }
-
-  // Wait for process and get exit code
-  DWORD exit_code = 0;
-  if (f->process_handle != INVALID_HANDLE_VALUE) {
-    WaitForSingleObject(f->process_handle, INFINITE);
-    GetExitCodeProcess(f->process_handle, &exit_code);
-    CloseHandle(f->process_handle);
-    f->process_handle = INVALID_HANDLE_VALUE;
-  }
-
-  f->is_closed = true;
-
-  // Lua 5.1/LuaJIT style: return true on success (any exit code)
-  lua_pushboolean(L, 1);
-  return 1;
-}
-
-/**
- * @brief __gc metamethod for popen file handle
- */
-static int popen_file_gc(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)lua_touserdata(L, 1);
-  if (f && !f->is_closed) {
-    if (f->pipe_handle != INVALID_HANDLE_VALUE) {
-      CloseHandle(f->pipe_handle);
-      f->pipe_handle = INVALID_HANDLE_VALUE;
-    }
-    if (f->process_handle != INVALID_HANDLE_VALUE) {
-      // Terminate process if still running
-      TerminateProcess(f->process_handle, 1);
-      CloseHandle(f->process_handle);
-      f->process_handle = INVALID_HANDLE_VALUE;
-    }
-    f->is_closed = true;
-  }
-  return 0;
-}
-
-/**
- * @brief popen file:read(...) method
- */
-static int popen_file_read(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)luaL_checkudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  if (!f || f->is_closed) {
-    lua_pushnil(L);
-    lua_pushstring(L, "attempt to use a closed file");
-    return 2;
-  }
-  if (!f->is_read) {
-    lua_pushnil(L);
-    lua_pushstring(L, "file not opened for reading");
-    return 2;
-  }
-
-  int nargs = lua_gettop(L) - 1;
-  if (nargs == 0) {
-    // Default: read a line
-    luaL_Buffer B;
-    luaL_buffinit(L, &B);
-    char ch;
-    DWORD bytes_read;
-    bool has_data = false;
-    while (ReadFile(f->pipe_handle, &ch, 1, &bytes_read, NULL) && bytes_read > 0) {
-      has_data = true;
-      if (ch == '\n') {
-        break;
-      }
-      if (ch == '\r') {
-        continue; // Skip CR
-      }
-      luaL_addchar(&B, ch);
-    }
-    if (has_data) {
-      luaL_pushresult(&B);
-    } else {
-      lua_pushnil(L);
-    }
-    return 1;
-  }
-
-  // Handle format arguments
-  for (int i = 2; i <= nargs + 1; i++) {
-    if (lua_type(L, i) == LUA_TNUMBER) {
-      size_t n = (size_t)lua_tointeger(L, i);
-      if (n == 0) {
-        DWORD avail = 0;
-        if (PeekNamedPipe(f->pipe_handle, NULL, 0, NULL, &avail, NULL) && avail > 0) {
-          lua_pushliteral(L, "");
-        } else {
-          lua_pushnil(L);
-        }
-      } else {
-        char *buffer = NULL;
-        if (!OV_ARRAY_GROW(&buffer, n)) {
-          lua_pushnil(L);
-          lua_pushstring(L, "out of memory");
-          return 2;
-        }
-        DWORD bytes_read;
-        if (ReadFile(f->pipe_handle, buffer, (DWORD)n, &bytes_read, NULL) && bytes_read > 0) {
-          lua_pushlstring(L, buffer, bytes_read);
-        } else {
-          lua_pushnil(L);
-        }
-        OV_ARRAY_DESTROY(&buffer);
-      }
-    } else {
-      char const *fmt = luaL_checkstring(L, i);
-      if (fmt[0] == '*') {
-        fmt++;
-      }
-      switch (fmt[0]) {
-      case 'a': // All
-      {
-        luaL_Buffer B;
-        luaL_buffinit(L, &B);
-        char buffer[4096];
-        DWORD bytes_read;
-        while (ReadFile(f->pipe_handle, buffer, sizeof(buffer), &bytes_read, NULL) && bytes_read > 0) {
-          luaL_addlstring(&B, buffer, bytes_read);
-        }
-        luaL_pushresult(&B);
-        break;
-      }
-      case 'l': // Line without newline
-      case 'L': // Line with newline
-      {
-        bool keep_newline = (fmt[0] == 'L');
-        luaL_Buffer B;
-        luaL_buffinit(L, &B);
-        char ch;
-        DWORD bytes_read;
-        bool has_data = false;
-        while (ReadFile(f->pipe_handle, &ch, 1, &bytes_read, NULL) && bytes_read > 0) {
-          has_data = true;
-          if (ch == '\n') {
-            if (keep_newline) {
-              luaL_addchar(&B, '\n');
-            }
-            break;
-          }
-          if (ch == '\r') {
-            continue;
-          }
-          luaL_addchar(&B, ch);
-        }
-        if (has_data) {
-          luaL_pushresult(&B);
-        } else {
-          lua_pushnil(L);
-        }
-        break;
-      }
-      default:
-        luaL_argerror(L, i, "invalid format");
-        break;
-      }
-    }
-  }
-  return nargs;
-}
-
-/**
- * @brief popen file:write(...) method
- */
-static int popen_file_write(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)luaL_checkudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  if (!f || f->is_closed) {
-    lua_pushnil(L);
-    lua_pushstring(L, "attempt to use a closed file");
-    return 2;
-  }
-  if (f->is_read) {
-    lua_pushnil(L);
-    lua_pushstring(L, "file not opened for writing");
-    return 2;
-  }
-
-  int nargs = lua_gettop(L);
-  for (int i = 2; i <= nargs; i++) {
-    size_t len;
-    char const *str;
-    if (lua_type(L, i) == LUA_TNUMBER) {
-      str = lua_tolstring(L, i, &len);
-    } else {
-      str = luaL_checklstring(L, i, &len);
-    }
-    DWORD written;
-    if (!WriteFile(f->pipe_handle, str, (DWORD)len, &written, NULL) || written != (DWORD)len) {
-      lua_pushnil(L);
-      lua_pushfstring(L, "write failed (error %d)", (int)GetLastError());
-      return 2;
-    }
-  }
-
-  lua_pushvalue(L, 1);
-  return 1;
-}
-
-/**
- * @brief popen file:lines() iterator
- */
-static int popen_file_lines_iterator(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)lua_touserdata(L, lua_upvalueindex(1));
-  if (!f || f->is_closed || f->pipe_handle == INVALID_HANDLE_VALUE) {
-    return 0;
-  }
-
-  luaL_Buffer B;
-  luaL_buffinit(L, &B);
-  char ch;
-  DWORD bytes_read;
-  bool has_data = false;
-  while (ReadFile(f->pipe_handle, &ch, 1, &bytes_read, NULL) && bytes_read > 0) {
-    has_data = true;
-    if (ch == '\n') {
-      break;
-    }
-    if (ch == '\r') {
-      continue;
-    }
-    luaL_addchar(&B, ch);
-  }
-
-  if (has_data) {
-    luaL_pushresult(&B);
-    return 1;
-  }
-  return 0;
-}
-
-/**
- * @brief popen file:lines() method
- */
-static int popen_file_lines(lua_State *L) {
-  luaL_checkudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  lua_pushvalue(L, 1);
-  lua_pushcclosure(L, popen_file_lines_iterator, 1);
-  return 1;
-}
-
-/**
- * @brief popen file:flush() method (stub)
- */
-static int popen_file_flush(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)luaL_checkudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  if (!f || f->is_closed) {
-    lua_pushnil(L);
-    lua_pushstring(L, "attempt to use a closed file");
-    return 2;
-  }
-  if (!f->is_read) {
-    FlushFileBuffers(f->pipe_handle);
-  }
-  lua_pushboolean(L, 1);
-  return 1;
-}
-
-/**
- * @brief __tostring metamethod for popen file handle
- */
-static int popen_file_tostring(lua_State *L) {
-  struct gcmz_popen_file *f = (struct gcmz_popen_file *)lua_touserdata(L, 1);
-  if (!f) {
-    lua_pushstring(L, "file (invalid)");
-  } else if (f->is_closed) {
-    lua_pushstring(L, "file (closed)");
-  } else {
-    lua_pushfstring(L, "file (%p)", (void *)f->pipe_handle);
-  }
-  return 1;
-}
-
-/**
- * @brief Setup popen file handle metatable
- */
-static void setup_popen_file_metatable(lua_State *L) {
-  luaL_newmetatable(L, GCMZ_POPEN_FILE_HANDLE_KEY);
-
-  lua_pushcfunction(L, popen_file_close);
-  lua_setfield(L, -2, "close");
-  lua_pushcfunction(L, popen_file_read);
-  lua_setfield(L, -2, "read");
-  lua_pushcfunction(L, popen_file_write);
-  lua_setfield(L, -2, "write");
-  lua_pushcfunction(L, popen_file_lines);
-  lua_setfield(L, -2, "lines");
-  lua_pushcfunction(L, popen_file_flush);
-  lua_setfield(L, -2, "flush");
-
-  lua_pushcfunction(L, popen_file_gc);
-  lua_setfield(L, -2, "__gc");
-  lua_pushcfunction(L, popen_file_tostring);
-  lua_setfield(L, -2, "__tostring");
-
-  lua_pushvalue(L, -1);
-  lua_setfield(L, -2, "__index");
-
-  lua_pop(L, 1);
-}
-
-/**
  * @brief io.type(obj) - UTF-8 aware version
  *
  * Returns "file" for open file handles, "closed file" for closed handles, nil otherwise.
- * Handles both regular file handles and popen handles.
  */
 static int io_type_utf8(lua_State *L) {
   luaL_checkany(L, 1);
 
-  // Check regular file handle
-  struct gcmz_io_file *f = get_file_handle(L, 1);
+  struct io_file *f = get_file_handle(L, 1);
   if (f) {
-    if (f->is_closed) {
-      lua_pushliteral(L, "closed file");
-    } else {
+    if (io_file_is_open(f)) {
       lua_pushliteral(L, "file");
-    }
-    return 1;
-  }
-
-  // Check popen file handle
-  struct gcmz_popen_file *pf = (struct gcmz_popen_file *)luaL_testudata(L, 1, GCMZ_POPEN_FILE_HANDLE_KEY);
-  if (pf) {
-    if (pf->is_closed) {
-      lua_pushliteral(L, "closed file");
     } else {
-      lua_pushliteral(L, "file");
+      lua_pushliteral(L, "closed file");
     }
     return 1;
   }
@@ -2132,13 +1976,16 @@ static int io_popen_utf8(lua_State *L) {
     CloseHandle(pi.hThread);
 
     // Create popen file userdata
-    struct gcmz_popen_file *f = (struct gcmz_popen_file *)lua_newuserdata(L, sizeof(struct gcmz_popen_file));
-    f->process_handle = pi.hProcess;
-    f->pipe_handle = our_pipe;
+    struct io_file *f = (struct io_file *)lua_newuserdata(L, sizeof(struct io_file));
+    f->type = io_file_type_popen;
+    f->handle = our_pipe;
     f->is_closed = false;
     f->is_read = is_read;
+    f->is_write = !is_read;
+    f->is_binary = false;
+    f->u.popen.process_handle = pi.hProcess;
 
-    luaL_getmetatable(L, GCMZ_POPEN_FILE_HANDLE_KEY);
+    luaL_getmetatable(L, io_file_handle_key);
     lua_setmetatable(L, -2);
 
     result = 1;
@@ -2490,6 +2337,17 @@ cleanup:
 }
 
 /**
+ * @brief os.setlocale() - Disabled version
+ *
+ * Calling setlocale can corrupt the UTF-8 environment, so this function
+ * always returns an error to prevent accidental locale changes.
+ */
+static int os_setlocale_disabled(lua_State *L) {
+  (void)L;
+  return luaL_error(L, "os.setlocale is disabled to preserve UTF-8 environment");
+}
+
+/**
  * @brief Setup UTF-8 aware os library functions
  */
 static void setup_os_utf8_funcs(lua_State *L) {
@@ -2514,6 +2372,9 @@ static void setup_os_utf8_funcs(lua_State *L) {
   lua_pushcfunction(L, os_getenv_utf8);
   lua_setfield(L, -2, "getenv");
 
+  lua_pushcfunction(L, os_setlocale_disabled);
+  lua_setfield(L, -2, "setlocale");
+
   lua_pop(L, 1);
 }
 
@@ -2523,7 +2384,6 @@ static void setup_os_utf8_funcs(lua_State *L) {
 static void setup_io_utf8_funcs(lua_State *L) {
   // Setup file handle metatables
   setup_io_file_metatable(L);
-  setup_popen_file_metatable(L);
 
   // Replace io functions
   lua_getglobal(L, "io");
@@ -2576,7 +2436,7 @@ static void setup_io_utf8_funcs(lua_State *L) {
       lua_setfield(L, -2, "stdin");
       // Also set as default input
       lua_getfield(L, -1, "stdin");
-      lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_INPUT_KEY);
+      lua_setfield(L, LUA_REGISTRYINDEX, io_input_key);
     }
   }
 
@@ -2588,7 +2448,7 @@ static void setup_io_utf8_funcs(lua_State *L) {
       lua_setfield(L, -2, "stdout");
       // Also set as default output
       lua_getfield(L, -1, "stdout");
-      lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_IO_OUTPUT_KEY);
+      lua_setfield(L, LUA_REGISTRYINDEX, io_output_key);
     }
   }
 
@@ -2613,11 +2473,11 @@ void gcmz_lua_setup_utf8_funcs(lua_State *const L) {
   lua_newtable(L);
   lua_pushcfunction(L, lua_c_handle_gc);
   lua_setfield(L, -2, "__gc");
-  lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_HMODULE_METATABLE_KEY);
+  lua_setfield(L, LUA_REGISTRYINDEX, c_module_metatable_key);
 
   // Create table to track loaded C modules and store in registry
   lua_newtable(L);
-  lua_setfield(L, LUA_REGISTRYINDEX, GCMZ_LOADED_C_HANDLES_KEY);
+  lua_setfield(L, LUA_REGISTRYINDEX, loaded_c_module_handles_key);
 
   // Replace loadfile
   lua_pushcfunction(L, lua_loadfile_utf8);
@@ -2627,7 +2487,7 @@ void gcmz_lua_setup_utf8_funcs(lua_State *const L) {
   lua_pushcfunction(L, lua_dofile_utf8);
   lua_setglobal(L, "dofile");
 
-  // Replace package.loaders[2] and [3]
+  // Replace package.loaders[2], [3], and [4]
   lua_getglobal(L, "package");
   if (lua_istable(L, -1)) {
     lua_getfield(L, -1, "loaders");
@@ -2639,6 +2499,10 @@ void gcmz_lua_setup_utf8_funcs(lua_State *const L) {
       // Replace loaders[3] (C searcher)
       lua_pushcfunction(L, lua_c_searcher_utf8);
       lua_rawseti(L, -2, 3);
+
+      // Replace loaders[4] (All-in-one C searcher)
+      lua_pushcfunction(L, lua_c_root_searcher_utf8);
+      lua_rawseti(L, -2, 4);
     }
     lua_pop(L, 1); // Pop loaders
   }

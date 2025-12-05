@@ -1,2 +1,3 @@
 EXPORTS
     luaopen_test_🌙 = luaopen_test_lua_module
+    luaopen_test_🌙_sub = luaopen_test_lua_module_sub

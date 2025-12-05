@@ -101,6 +101,7 @@ bool gcmz_lua_loadfile(lua_State *const L, NATIVE_CHAR const *const filepath, st
  * - dofile: Reimplemented using the new loadfile
  * - package.loaders[2]: Lua file searcher with wchar_t support
  * - package.loaders[3]: C library searcher with LoadLibraryW
+ * - package.loaders[4]: All-in-one C library searcher with LoadLibraryW
  * - io.open: Uses CreateFileW for Unicode path support
  * - io.input: UTF-8 path support when filename is given
  * - io.output: UTF-8 path support when filename is given
@@ -114,6 +115,7 @@ bool gcmz_lua_loadfile(lua_State *const L, NATIVE_CHAR const *const filepath, st
  * - os.rename: Uses MoveFileW for Unicode path support
  * - os.tmpname: Uses GetTempFileNameW and returns UTF-8 path
  * - os.getenv: Uses GetEnvironmentVariableW and returns UTF-8 value
+ * - os.setlocale: Disabled (always raises error to preserve UTF-8 environment)
  *
  * @param L Lua state
  */
