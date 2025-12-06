@@ -30,6 +30,22 @@
 - [gcmz.convert\_encoding](#gcmzconvert_encoding)
 - [gcmz.decode\_exo\_text](#gcmzdecode_exo_text)
 
+### ini モジュール
+
+- [概要](#ini-概要)
+- [ini.new](#ininew)
+- [ini.load](#iniload)
+- [ini:save](#inisave)
+- [ini:get](#iniget)
+- [ini:set](#iniset)
+- [ini:delete](#inidelete)
+- [ini:deletesection](#inideletesection)
+- [ini:sections](#inisections)
+- [ini:keys](#inikeys)
+- [ini:sectionexists](#inisectionexists)
+- [ini:exists](#iniexists)
+- [文字列への変換](#文字列への変換)
+
 ---
 
 # ハンドラースクリプト
@@ -754,5 +770,439 @@ if ok then
     print("変換結果: " .. result)
 else
     print("エラー: " .. result)
+end
+```
+
+---
+
+# ini モジュール
+
+## ini 概要
+
+`ini` モジュールは、INI 形式の設定ファイルを解析、変更、シリアライズするための機能を提供します。
+
+`require('ini')` で読み込むことで使用できます。
+
+### 基本的な使い方
+
+```lua
+local ini = require('ini')
+
+-- ファイルから読み込む
+local config = ini.load("config.ini")
+
+-- 値を取得
+local value = config:get("section", "key", "default")
+
+-- 値を設定
+config:set("section", "key", "new_value")
+
+-- ファイルに保存
+config:save("config.ini")
+```
+
+### 空のインスタンスの作成
+
+```lua
+local ini = require('ini')
+
+-- 空のインスタンスを作成
+local config = ini.new()
+
+-- 値を設定
+config:set("section", "key", "value")
+
+-- ファイルに保存
+config:save("config.ini")
+```
+
+---
+
+## ini.new
+
+INI パーサーを作成します。
+
+### 構文
+
+```lua
+local config = ini.new()
+local config = ini.new(str)
+local config = ini.new(iterator)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `source` | nil / string / function | 入力ソース（省略可能） |
+
+`source` には以下の値を指定できます：
+
+| 値 | 説明 |
+|---|------|
+| `nil`（省略） | 空の INI オブジェクトを作成 |
+| 文字列 | INI 形式の文字列として解析 |
+| 関数 | 行イテレーター（例: `io.lines()`）として使用 |
+
+### 戻り値
+
+新しい INI パーサーオブジェクトを返します。
+
+### 例
+
+```lua
+local ini = require('ini')
+
+-- 空のインスタンスを作成
+local config1 = ini.new()
+
+-- 文字列から作成
+local config2 = ini.new([=[
+[section]
+key1=value1
+key2=value2
+]=])
+
+-- ファイルから読み込む（io.lines イテレーターを使用）
+local config3 = ini.new(io.lines("config.ini"))
+
+print(config2:get("section", "key1"))  -- 出力: value1
+```
+
+---
+
+## ini.load
+
+INI ファイルを読み込みます。
+
+### 構文
+
+```lua
+local config = ini.load(filepath)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `filepath` | string | 読み込む INI ファイルのパス |
+
+### 戻り値
+
+新しい INI パーサーオブジェクトを返します。
+
+### 例
+
+```lua
+local ini = require('ini')
+local config = ini.load("config.ini")
+print(config:get("section", "key"))
+```
+
+---
+
+## ini:save
+
+INI オブジェクトをファイルに保存します。
+
+### 構文
+
+```lua
+config:save(filepath)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `filepath` | string | 保存先のファイルパス |
+
+### エラー
+
+- ファイルを開けない場合、エラーをスローします。
+
+### 例
+
+```lua
+local ini = require('ini')
+local config = ini.new()
+config:set("section", "key", "value")
+config:save("config.ini")
+```
+
+---
+
+## ini:get
+
+INI データから値を取得します。
+
+### 構文
+
+```lua
+local value = config:get(sect, key, default)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | セクション名 |
+| `key` | string | キー名 |
+| `default` | any | キーが存在しない場合に返すデフォルト値 |
+
+### 戻り値
+
+指定されたセクションとキーに対応する値を返します。キーが存在しない場合は `default` を返します。
+
+### 例
+
+```lua
+local value = config:get("display", "width", "640")
+print(value)  -- キーが存在すればその値、なければ "640"
+```
+
+---
+
+## ini:set
+
+INI データに値を設定します。
+
+### 構文
+
+```lua
+config:set(sect, key, value)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | セクション名 |
+| `key` | string | キー名 |
+| `value` | any | 設定する値（文字列に変換されます） |
+
+### 説明
+
+セクションやキーが存在しない場合は自動的に作成されます。
+
+### 例
+
+```lua
+config:set("display", "width", 1920)
+config:set("display", "height", 1080)
+```
+
+---
+
+## ini:delete
+
+INI データからキーを削除します。
+
+### 構文
+
+```lua
+config:delete(sect, key)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | セクション名 |
+| `key` | string | 削除するキー名 |
+
+### 例
+
+```lua
+config:delete("display", "width")
+```
+
+---
+
+## ini:deletesection
+
+INI データからセクション全体を削除します。
+
+### 構文
+
+```lua
+config:deletesection(sect)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | 削除するセクション名 |
+
+### 例
+
+```lua
+config:deletesection("display")
+```
+
+---
+
+## ini:sections
+
+すべてのセクション名を取得します。
+
+### 構文
+
+```lua
+local sections = config:sections()
+```
+
+### パラメーター
+
+なし。
+
+### 戻り値
+
+セクション名の配列を返します。セクションは追加された順序で返されます。
+
+### 例
+
+```lua
+local sections = config:sections()
+for _, sect in ipairs(sections) do
+    print("セクション: " .. sect)
+end
+```
+
+---
+
+## ini:keys
+
+指定されたセクション内のすべてのキー名を取得します。
+
+### 構文
+
+```lua
+local keys = config:keys(sect)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | セクション名 |
+
+### 戻り値
+
+キー名の配列を返します。キーは追加された順序で返されます。セクションが存在しない場合は空のテーブルを返します。
+
+### 例
+
+```lua
+local keys = config:keys("display")
+for _, key in ipairs(keys) do
+    print("キー: " .. key)
+end
+```
+
+---
+
+## ini:sectionexists
+
+セクションが存在するかどうかを確認します。
+
+### 構文
+
+```lua
+local exists = config:sectionexists(sect)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | 確認するセクション名 |
+
+### 戻り値
+
+セクションが存在する場合は `true`、存在しない場合は `false` を返します。
+
+### 例
+
+```lua
+if config:sectionexists("display") then
+    print("display セクションが存在します")
+end
+```
+
+---
+
+## ini:exists
+
+セクション内にキーが存在するかどうかを確認します。
+
+### 構文
+
+```lua
+local exists = config:exists(sect, key)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `sect` | string | セクション名 |
+| `key` | string | 確認するキー名 |
+
+### 戻り値
+
+キーが存在する場合は `true`、存在しない場合は `false` を返します。
+
+### 例
+
+```lua
+if config:exists("display", "width") then
+    print("width キーが存在します")
+end
+```
+
+---
+
+## 文字列への変換
+
+INI オブジェクトは `tostring()` を使って INI 形式の文字列に変換できます。
+
+### 構文
+
+```lua
+local str = tostring(config)
+```
+
+### 説明
+
+INI データを INI 形式の文字列に変換します。セクションとキーは追加された順序で出力されます。行末は CRLF（`\r\n`）です。
+
+### 例
+
+```lua
+local ini = require('ini')
+local config = ini.new("")
+config:set("section1", "key1", "value1")
+config:set("section1", "key2", "value2")
+config:set("section2", "keyA", "valueA")
+
+local str = tostring(config)
+print(str)
+-- 出力:
+-- [section1]
+-- key1=value1
+-- key2=value2
+-- [section2]
+-- keyA=valueA
+```
+
+### ファイルへの保存
+
+```lua
+local f = io.open("output.ini", "wb")
+if f then
+    f:write(tostring(config))
+    f:close()
 end
 ```
