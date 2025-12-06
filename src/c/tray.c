@@ -25,9 +25,10 @@ struct gcmz_tray {
   HWND hwnd;
   UINT taskbar_created_msg;
   thrd_t thread;
-  mtx_t mutex; ///< Protects menu_items and hwnd
-  cnd_t cond;  ///< Signals when hwnd is created
-  HICON icon;  ///< Icon to display in system tray
+  mtx_t mutex;  ///< Protects menu_items and hwnd
+  cnd_t cond;   ///< Signals when hwnd is created
+  HICON icon;   ///< Icon to display in system tray
+  bool visible; ///< Whether the tray icon is currently visible
 };
 
 static BOOL register_tray_icon(HWND const hwnd, HICON const icon) {
@@ -131,7 +132,9 @@ static LRESULT CALLBACK tray_window_proc(HWND const hwnd, UINT const msg, WPARAM
       static wchar_t const taskbar_created[] = L"TaskbarCreated";
       tray->taskbar_created_msg = RegisterWindowMessageW(taskbar_created);
       SetPropW(hwnd, prop_name, (HANDLE)tray);
-      register_tray_icon(hwnd, tray->icon);
+      if (tray->visible) {
+        register_tray_icon(hwnd, tray->icon);
+      }
     }
     break;
 
@@ -142,13 +145,15 @@ static LRESULT CALLBACK tray_window_proc(HWND const hwnd, UINT const msg, WPARAM
     return 0;
 
   case WM_DESTROY:
-    unregister_tray_icon(hwnd);
+    if (tray && tray->visible) {
+      unregister_tray_icon(hwnd);
+    }
     RemovePropW(hwnd, prop_name);
     PostQuitMessage(0);
     return 0;
 
   default:
-    if (tray && msg == tray->taskbar_created_msg) {
+    if (tray && msg == tray->taskbar_created_msg && tray->visible) {
       register_tray_icon(hwnd, tray->icon);
       return 0;
     }
@@ -366,4 +371,40 @@ void gcmz_tray_remove_menu_item(struct gcmz_tray *const tray, gcmz_tray_callback
   }
 
   mtx_unlock(&tray->mutex);
+}
+
+bool gcmz_tray_set_visible(struct gcmz_tray *const tray, bool const visible, struct ov_error *const err) {
+  if (!tray) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+
+  bool result = false;
+
+  mtx_lock(&tray->mutex);
+  {
+    if (tray->visible == visible) {
+      result = true;
+      goto cleanup;
+    }
+
+    BOOL ok;
+    if (visible) {
+      ok = register_tray_icon(tray->hwnd, tray->icon);
+    } else {
+      unregister_tray_icon(tray->hwnd);
+      ok = TRUE;
+    }
+    if (!ok) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+    tray->visible = visible;
+  }
+
+  result = true;
+
+cleanup:
+  mtx_unlock(&tray->mutex);
+  return result;
 }

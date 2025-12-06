@@ -75,6 +75,18 @@ bool gcmz_tray_add_menu_item(struct gcmz_tray *const tray,
 void gcmz_tray_remove_menu_item(struct gcmz_tray *const tray, gcmz_tray_callback const callback);
 
 /**
+ * @brief Set tray icon visibility
+ *
+ * Shows or hides the tray icon. This function is thread-safe.
+ *
+ * @param tray Tray instance pointer
+ * @param visible true to show, false to hide
+ * @param err [out] Error information
+ * @return true on success, false on failure
+ */
+bool gcmz_tray_set_visible(struct gcmz_tray *const tray, bool const visible, struct ov_error *const err);
+
+/**
  * @brief Destroy tray icon instance and cleanup resources
  *
  * This function sends a close message to the tray window,

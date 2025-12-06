@@ -872,26 +872,14 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
   (void)userdata;
   static wchar_t label[64];
   switch (event->type) {
-  case gcmz_tray_callback_query_info: {
-    bool show_debug_menu = false;
-    struct ov_error err = {0};
-    if (gcmz_config_get_show_debug_menu(g_config, &show_debug_menu, &err)) {
-      if (show_debug_menu) {
-        if (label[0] == L'\0') {
-          ov_snprintf_wchar(
-              label, sizeof(label) / sizeof(label[0]), NULL, L"%s", gettext("Save Timeline Screenshot (Debug)"));
-        }
-        event->result.query_info.label = label;
-        event->result.query_info.enabled = true;
-      } else {
-        event->result.query_info.label = NULL;
-      }
-    } else {
-      event->result.query_info.label = NULL;
-      OV_ERROR_DESTROY(&err);
+  case gcmz_tray_callback_query_info:
+    if (label[0] == L'\0') {
+      ov_snprintf_wchar(
+          label, sizeof(label) / sizeof(label[0]), NULL, L"%s", gettext("Save Timeline Screenshot (Debug)"));
     }
+    event->result.query_info.label = label;
+    event->result.query_info.enabled = true;
     break;
-  }
 
   case gcmz_tray_callback_clicked: {
     struct ov_error err = {0};
@@ -922,30 +910,34 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
   }
 }
 
-static void tray_menu_config(void *userdata, struct gcmz_tray_callback_event *const event) {
-  (void)userdata;
-  static bool dialog_open;
-  static wchar_t label[64];
-  switch (event->type) {
-  case gcmz_tray_callback_query_info:
-    if (label[0] == L'\0') {
-      ov_snprintf_wchar(label, sizeof(label) / sizeof(label[0]), L"%s", L"%s", gettext("GCMZDrops Settings..."));
-    }
-    event->result.query_info.label = label;
-    event->result.query_info.enabled = !dialog_open;
-    break;
+static void update_tray_visibility(void) {
+  struct ov_error err = {0};
+  bool show_debug_menu = false;
+  if (!gcmz_config_get_show_debug_menu(g_config, &show_debug_menu, &err)) {
+    gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to get show debug menu setting"));
+    OV_ERROR_DESTROY(&err);
+    return;
+  }
+  if (!gcmz_tray_set_visible(g_tray, show_debug_menu, &err)) {
+    gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to update tray icon visibility"));
+    OV_ERROR_DESTROY(&err);
+  }
+}
 
-  case gcmz_tray_callback_clicked: {
-    struct ov_error err = {0};
-    bool const running = g_api != NULL;
-    bool external_api_enabled = false;
-    bool success = false;
+static void config_menu_handler(HWND const hwnd, HINSTANCE const dll_hinst) {
+  (void)dll_hinst;
+  struct ov_error err = {0};
+  bool const running = g_api != NULL;
+  bool external_api_enabled = false;
+  bool success = false;
 
-    dialog_open = true;
-    if (!gcmz_config_dialog_show(g_config, gcmz_aviutl2_get_main_window(), running, &err)) {
+  {
+    if (!gcmz_config_dialog_show(g_config, hwnd, running, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
+
+    update_tray_visibility();
 
     if (!gcmz_config_get_external_api(g_config, &external_api_enabled, &err)) {
       gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to get external API setting"));
@@ -965,16 +957,14 @@ static void tray_menu_config(void *userdata, struct gcmz_tray_callback_event *co
     } else {
       gcmz_api_destroy(&g_api);
     }
-    success = true;
-
-  cleanup:
-    if (!success) {
-      gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to update external API state"));
-      OV_ERROR_REPORT(&err, NULL);
-    }
-    dialog_open = false;
-    break;
   }
+
+  success = true;
+
+cleanup:
+  if (!success) {
+    gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to update settings"));
+    OV_ERROR_REPORT(&err, NULL);
   }
 }
 
@@ -2189,11 +2179,6 @@ static bool initialize(struct ov_error *const err) {
     }
   }
 
-  if (!gcmz_tray_add_menu_item(g_tray, tray_menu_config, NULL, err)) {
-    OV_ERROR_ADD_TRACE(err);
-    goto cleanup;
-  }
-
   if (!gcmz_tray_add_menu_item(g_tray, tray_menu_debug_capture, NULL, err)) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
@@ -2213,6 +2198,8 @@ static bool initialize(struct ov_error *const err) {
     goto cleanup;
   }
 #endif
+
+  update_tray_visibility();
 
   success = true;
 cleanup:
@@ -2380,6 +2367,14 @@ void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host) {
                     L"%s",
                     gettext("[GCMZDrops] Paste from Clipboard"));
   host->register_layer_menu(layer_menu_name, paste_from_clipboard_handler);
+
+  static wchar_t config_menu_name[64];
+  ov_snprintf_wchar(config_menu_name,
+                    sizeof(config_menu_name) / sizeof(config_menu_name[0]),
+                    L"%s",
+                    L"%s",
+                    gettext("GCMZDrops Settings..."));
+  host->register_config_menu(config_menu_name, config_menu_handler);
 
   // It seems that calling call_edit_section will automatically stop playback if it is in progress.
   // It cannot be used for purposes such as being called periodically in the background.
