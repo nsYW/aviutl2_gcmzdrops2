@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.0.0alpha5 2025-12-06
 
+- AviUtl ExEdit2.0beta23 に対応
 - get_edit_info / get_project_file_path を API を使うように改善
 - Lua 環境の整備
 
