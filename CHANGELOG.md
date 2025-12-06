@@ -2,17 +2,17 @@
 
 ## 2.0.0alpha5 2025-12-06
 
-- AviUtl ExEdit2.0beta23 に対応
+- AviUtl ExEdit2 version 2.0beta23 に対応
 - get_edit_info / get_project_file_path を API を使うように改善
 - Lua 環境の整備
 
 ## 2.0.0alpha4 2025-12-03
 
-- AviUtl ExEdit2.0beta22a に対応
+- AviUtl ExEdit2 version 2.0beta22a に対応
 
 ## 2.0.0alpha3 2025-11-30
 
-- AviUtl ExEdit2.0beta22 に対応
+- AviUtl ExEdit2 version 2.0beta22 に対応
 - 初期化時にクラッシュする問題を修正
 
 ## 2.0.0alpha2 2025-11-27
