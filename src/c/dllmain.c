@@ -1961,8 +1961,10 @@ static void delayed_initialization(void *userdata) {
     }
 
     // Wait until AviUtl ready
-    while (!gcmz_aviutl2_internal_object_ptr_is_valid()) {
-      Sleep(50);
+    if (!g_unknown_binary) {
+      while (!gcmz_aviutl2_internal_object_ptr_is_valid()) {
+        Sleep(50);
+      }
     }
 
     bool external_api_enabled = false;
