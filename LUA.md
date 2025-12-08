@@ -24,6 +24,7 @@
 ### gcmz ネームスペース
 
 - [gcmz.get\_project\_data](#gcmzget_project_data)
+- [gcmz.get\_script\_directory](#gcmzget_script_directory)
 - [gcmz.get\_versions](#gcmzget_versions)
 - [gcmz.create\_temp\_file](#gcmzcreate_temp_file)
 - [gcmz.save\_file](#gcmzsave_file)
@@ -259,7 +260,7 @@ end
 
 | フィールド | 型 | 説明 |
 |-------|------|-------------|
-| `filepath` | string | ファイルのフルパス（UTF-8） |
+| `filepath` | string | ファイルのフルパス |
 | `mimetype` | string | ファイルの MIME タイプ（例: `"image/png"`、`"audio/wav"`）。不明な場合は空文字列 |
 | `temporary` | boolean | 一時ファイルかどうか。`true` の場合、ドロップ処理完了後に自動的に削除される対象となります |
 
@@ -430,7 +431,7 @@ debug_print(message)
 
 | パラメーター | 型 | 説明 |
 |-----------|------|-------------|
-| `message` | string | 出力するメッセージ（UTF-8） |
+| `message` | string | 出力するメッセージ |
 
 ### 戻り値
 
@@ -540,13 +541,9 @@ local data = gcmz.get_project_data()
 | `video_rate` | integer | 動画フレームレートの分子 |
 | `video_scale` | integer | 動画フレームレートの分母 |
 | `sample_rate` | integer | 音声サンプリングレート（Hz） |
-| `project_path` | string または nil | プロジェクトファイルのパス（UTF-8）、未保存の場合は nil |
+| `project_path` | string または nil | プロジェクトファイルのパス、未保存の場合は nil |
 
-> **注意**: 実際のフレームレート（fps）は `video_rate / video_scale` で計算できます。
-
-### エラー
-
-- プロジェクトデータプロバイダーが設定されていない場合、エラーをスローします。
+実際のフレームレート（fps）は `video_rate / video_scale` で計算できます。
 
 ### 例
 
@@ -557,6 +554,42 @@ print("フレームレート: " .. (project.video_rate / project.video_scale) ..
 print("サンプリングレート: " .. project.sample_rate .. " Hz")
 if project.project_path then
     print("プロジェクトパス: " .. project.project_path)
+end
+```
+
+---
+
+## gcmz.get_script_directory
+
+GCMZDrops のスクリプトディレクトリのフルパスを取得します。
+
+### 構文
+
+```lua
+local script_dir = gcmz.get_script_directory()
+```
+
+### パラメーター
+
+なし。
+
+### 戻り値
+
+スクリプトディレクトリのフルパスを返します。
+
+### 例
+
+```lua
+local script_dir = gcmz.get_script_directory()
+print("スクリプトディレクトリ: " .. script_dir)
+
+-- スクリプトディレクトリ内のファイルにアクセスする例
+local config_path = script_dir .. "/config.ini"
+local f = io.open(config_path, "r")
+if f then
+    local content = f:read("*a")
+    f:close()
+    -- content を処理...
 end
 ```
 
@@ -609,7 +642,7 @@ local temp_path = gcmz.create_temp_file(filename)
 
 | パラメーター | 型 | 説明 |
 |-----------|------|-------------|
-| `filename` | string | 一時ファイルのベースファイル名（UTF-8） |
+| `filename` | string | 一時ファイルのベースファイル名 |
 
 ### 戻り値
 
@@ -642,12 +675,12 @@ local dest_path = gcmz.save_file(src_path, dest_filename)
 
 | パラメーター | 型 | 説明 |
 |-----------|------|-------------|
-| `src_path` | string | ソースファイルのパス（UTF-8） |
-| `dest_filename` | string | 保存先のファイル名（フルパスではない）（UTF-8） |
+| `src_path` | string | ソースファイルのパス |
+| `dest_filename` | string | 保存先のファイル名（フルパスではない） |
 
 ### 戻り値
 
-ファイルが保存された保存先のフルパスを返します（UTF-8 文字列）。
+ファイルが保存された保存先のフルパスを返します。
 
 ### エラー
 
@@ -717,7 +750,7 @@ local utf8_text = gcmz.convert_encoding(sjis_text, "sjis", "utf8")
 
 ## gcmz.decode_exo_text
 
-EXO テキストフィールド形式（16進数エンコードされた UTF-16LE）を UTF-8 文字列にデコードします。
+EXO テキストフィールド形式（16進数エンコードされた UTF-16LE）を文字列にデコードします。
 
 ### 構文
 
@@ -741,7 +774,7 @@ EXO ファイルはテキストフィールドを16進数エンコードされ�
 
 ### 戻り値
 
-デコードされたテキストを UTF-8 文字列として返します。
+デコードされたテキストを文字列として返します。
 
 ### エラー
 
@@ -1267,7 +1300,7 @@ local value = json.decode(str)
 
 | パラメーター | 型 | 説明 |
 |-----------|------|-------------|
-| `str` | string | パースする JSON 文字列（UTF-8） |
+| `str` | string | パースする JSON 文字列 |
 
 ### 戻り値
 
@@ -1395,5 +1428,5 @@ end
 
 - 出力される JSON はコンパクト形式（余分な空白なし）です
 - オブジェクトのキー順序は保証されません
-- UTF-8 文字列はそのまま出力されます
+- 文字列はそのまま出力されます
 - 制御文字は適切にエスケープされます

@@ -50,6 +50,15 @@ typedef NODISCARD bool (*gcmz_lua_api_get_project_data_fn)(struct aviutl2_edit_i
 typedef void (*gcmz_lua_api_debug_print_fn)(void *userdata, char const *message);
 
 /**
+ * @brief Callback function type for getting script directory path
+ *
+ * @param userdata User-provided data
+ * @param err [out] Error information on failure
+ * @return Script directory path (UTF-8, caller must OV_ARRAY_DESTROY), NULL on failure
+ */
+typedef char *(*gcmz_lua_api_script_dir_provider_fn)(void *userdata, struct ov_error *err);
+
+/**
  * @brief Options for Lua API registration
  */
 struct gcmz_lua_api_options {
@@ -57,6 +66,7 @@ struct gcmz_lua_api_options {
   gcmz_lua_api_save_path_provider_fn save_path_provider;
   gcmz_lua_api_get_project_data_fn get_project_data;
   gcmz_lua_api_debug_print_fn debug_print;
+  gcmz_lua_api_script_dir_provider_fn script_dir_provider;
   void *userdata;
   uint32_t aviutl2_ver;
   uint32_t gcmz_ver;

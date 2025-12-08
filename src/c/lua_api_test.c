@@ -273,6 +273,98 @@ static void test_debug_print(void) {
   gcmz_lua_api_set_options(NULL);
 }
 
+// Mock callback for get_script_directory
+static char *mock_get_script_directory(void *userdata, struct ov_error *err) {
+  (void)userdata;
+  (void)err;
+  char const *const path = "C:/test/scripts";
+  size_t const len = strlen(path);
+  char *result = NULL;
+  if (!OV_ARRAY_GROW(&result, len + 1)) {
+    return NULL;
+  }
+  memcpy(result, path, len + 1);
+  return result;
+}
+
+static void test_get_script_directory(void) {
+  lua_State *L = luaL_newstate();
+  TEST_ASSERT(L != NULL);
+
+  luaL_openlibs(L);
+
+  // Set up mock callback with script_dir_provider
+  gcmz_lua_api_set_options(&(struct gcmz_lua_api_options){
+      .get_project_data = mock_get_project_data,
+      .script_dir_provider = mock_get_script_directory,
+      .userdata = NULL,
+  });
+
+  struct ov_error err = {0};
+  if (!TEST_CHECK(gcmz_lua_api_register(L, &err))) {
+    OV_ERROR_REPORT(&err, NULL);
+    lua_close(L);
+    gcmz_lua_api_set_options(NULL);
+    return;
+  }
+
+  // Test get_script_directory exists as function
+  lua_getglobal(L, "gcmz");
+  lua_getfield(L, -1, "get_script_directory");
+  TEST_CHECK(lua_isfunction(L, -1));
+  lua_pop(L, 2);
+
+  // Test calling get_script_directory
+  int result = luaL_dostring(L, "return gcmz.get_script_directory()");
+  if (!TEST_CHECK(result == LUA_OK)) {
+    if (lua_isstring(L, -1)) {
+      TEST_MSG("get_script_directory error: %s", lua_tostring(L, -1));
+    }
+    lua_close(L);
+    gcmz_lua_api_set_options(NULL);
+    return;
+  }
+
+  TEST_CHECK(lua_isstring(L, -1));
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "C:/test/scripts") == 0);
+  lua_pop(L, 1);
+
+  lua_close(L);
+  gcmz_lua_api_set_options(NULL);
+}
+
+static void test_get_script_directory_no_provider(void) {
+  lua_State *L = luaL_newstate();
+  TEST_ASSERT(L != NULL);
+
+  luaL_openlibs(L);
+
+  // Set up without script_dir_provider
+  gcmz_lua_api_set_options(&(struct gcmz_lua_api_options){
+      .get_project_data = mock_get_project_data,
+      .script_dir_provider = NULL,
+      .userdata = NULL,
+  });
+
+  struct ov_error err = {0};
+  if (!TEST_CHECK(gcmz_lua_api_register(L, &err))) {
+    OV_ERROR_REPORT(&err, NULL);
+    lua_close(L);
+    gcmz_lua_api_set_options(NULL);
+    return;
+  }
+
+  // Test calling get_script_directory without provider should fail
+  int result = luaL_dostring(L, "return pcall(gcmz.get_script_directory)");
+  TEST_CHECK(result == LUA_OK);
+  TEST_CHECK(lua_isboolean(L, -2));
+  TEST_CHECK(!lua_toboolean(L, -2)); // Should return false (error)
+  lua_pop(L, 2);
+
+  lua_close(L);
+  gcmz_lua_api_set_options(NULL);
+}
+
 static void test_i18n(void) {
   lua_State *L = luaL_newstate();
   TEST_ASSERT(L != NULL);
@@ -367,6 +459,8 @@ TEST_LIST = {
     {"decode_exo_text", test_decode_exo_text},
     {"register_invalid_args", test_register_invalid_args},
     {"debug_print", test_debug_print},
+    {"get_script_directory", test_get_script_directory},
+    {"get_script_directory_no_provider", test_get_script_directory_no_provider},
     {"i18n", test_i18n},
     {NULL, NULL},
 };

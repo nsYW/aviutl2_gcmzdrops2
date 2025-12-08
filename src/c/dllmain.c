@@ -1949,6 +1949,47 @@ cleanup:
   return result;
 }
 
+static char *get_script_directory_utf8(void *userdata, struct ov_error *err) {
+  (void)userdata;
+  wchar_t *script_dir_w = NULL;
+  char *script_dir = NULL;
+
+  {
+    if (!get_script_directory_path(&script_dir_w, err)) {
+      OV_ERROR_ADD_TRACE(err);
+      goto cleanup;
+    }
+
+    int const dest_len = WideCharToMultiByte(CP_UTF8, 0, script_dir_w, -1, NULL, 0, NULL, NULL);
+    if (dest_len <= 0) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+
+    if (!OV_ARRAY_GROW(&script_dir, (size_t)dest_len)) {
+      OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
+      goto cleanup;
+    }
+
+    if (WideCharToMultiByte(CP_UTF8, 0, script_dir_w, -1, script_dir, dest_len, NULL, NULL) <= 0) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+  }
+
+  OV_ARRAY_DESTROY(&script_dir_w);
+  return script_dir;
+
+cleanup:
+  if (script_dir_w) {
+    OV_ARRAY_DESTROY(&script_dir_w);
+  }
+  if (script_dir) {
+    OV_ARRAY_DESTROY(&script_dir);
+  }
+  return NULL;
+}
+
 static HICON load_icon(struct ov_error *const err) {
   enum { IDI_APPICON = 101 };
   void *hinstance = NULL;
@@ -2167,6 +2208,7 @@ static bool initialize(struct ov_error *const err) {
       .save_path_provider = get_save_path_utf8,
       .get_project_data = get_project_data_utf8,
       .debug_print = lua_debug_print,
+      .script_dir_provider = get_script_directory_utf8,
       .userdata = NULL,
       .aviutl2_ver = g_aviutl2_version,
       .gcmz_ver = GCMZ_VERSION_UINT32,

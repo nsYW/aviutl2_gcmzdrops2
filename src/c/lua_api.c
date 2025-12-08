@@ -464,6 +464,34 @@ static int gcmz_lua_get_versions(lua_State *L) {
   return 1;
 }
 
+static int gcmz_lua_get_script_directory(lua_State *L) {
+  if (!g_lua_api_options.script_dir_provider) {
+    return luaL_error(L, "get_script_directory is not available (no script directory provider configured)");
+  }
+
+  struct ov_error err = {0};
+  char *script_dir = NULL;
+  int result = -1;
+
+  {
+    script_dir = g_lua_api_options.script_dir_provider(g_lua_api_options.userdata, &err);
+    if (!script_dir) {
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
+    }
+
+    lua_pushstring(L, script_dir);
+  }
+
+  result = 1;
+
+cleanup:
+  if (script_dir) {
+    OV_ARRAY_DESTROY(&script_dir);
+  }
+  return result < 0 ? gcmz_luafn_err(L, &err) : result;
+}
+
 // Decode EXO text field (hex-encoded UTF-16LE) to UTF-8
 // EXO text format: each UTF-16LE code unit is represented as 4 hex digits (little-endian byte order)
 // Example: "41004200" = "AB" (0x0041 = 'A', 0x0042 = 'B')
@@ -889,6 +917,8 @@ bool gcmz_lua_api_register(struct lua_State *const L, struct ov_error *const err
   lua_setfield(L, -2, "decode_exo_text");
   lua_pushcfunction(L, gcmz_lua_get_project_data);
   lua_setfield(L, -2, "get_project_data");
+  lua_pushcfunction(L, gcmz_lua_get_script_directory);
+  lua_setfield(L, -2, "get_script_directory");
   lua_pushcfunction(L, gcmz_lua_get_versions);
   lua_setfield(L, -2, "get_versions");
   lua_pushcfunction(L, gcmz_lua_save_file);
