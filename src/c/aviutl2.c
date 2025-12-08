@@ -43,9 +43,6 @@ static struct version_info {
 
   // Absolute addresses in target program
   size_t layer_window_context;
-  size_t set_frame_cursor_func;
-  size_t set_display_layer_func;
-  size_t set_display_zoom_func;
 
   // Offsets relative to layer_window_context
   size_t project_context_offset;
@@ -54,8 +51,6 @@ static struct version_info {
   size_t project_data_offset;
 
   // Offsets relative to project_data structure
-  size_t display_frame_offset;
-  size_t display_layer_offset;
   size_t display_zoom_offset;
 } g_version_info = {0};
 
@@ -429,13 +424,8 @@ detect_version(HMODULE aviutl2_module, struct version_info *const dest, struct o
     if (check_version_info(aviutl2_module, &temp_info, module_size)) {
       LOAD_FIELD(version, parse_dec_u32);
       LOAD_FIELD(layer_window_context, parse_hex_zu);
-      LOAD_FIELD(set_frame_cursor_func, parse_hex_zu);
-      LOAD_FIELD(set_display_layer_func, parse_hex_zu);
-      LOAD_FIELD(set_display_zoom_func, parse_hex_zu);
       LOAD_FIELD(project_context_offset, parse_hex_zu);
       LOAD_FIELD(project_data_offset, parse_hex_zu);
-      LOAD_FIELD(display_frame_offset, parse_hex_zu);
-      LOAD_FIELD(display_layer_offset, parse_hex_zu);
       LOAD_FIELD(display_zoom_offset, parse_hex_zu);
       *dest = temp_info;
       result = signature_verified ? gcmz_aviutl2_status_success : gcmz_aviutl2_status_signature_failed;
@@ -504,40 +494,6 @@ static int get_project_data_int(size_t const offset) {
     return 0;
   }
   return *ptr;
-}
-
-static void set_project_data_int(size_t const offset, int const value) {
-  void *internal_obj = get_internal_object_ptr();
-  if (!internal_obj) {
-    return;
-  }
-  *(int *)calc_offset(internal_obj, offset) = value;
-}
-
-static void call_set_cursor_frame(void *userdata) {
-  int const frame = *(int const *)userdata;
-  typedef HRESULT(set_cursor_frame)(struct aviutl2_main_context * ctx, int frame);
-  set_cursor_frame *f = (set_cursor_frame *)calc_offset(g_aviutl2_module, g_version_info.set_frame_cursor_func);
-  struct aviutl2_main_context *ctx = get_main_context();
-  f(ctx, frame);
-}
-
-static void call_set_display_layer(void *userdata) {
-  int const layer = *(int const *)userdata;
-  typedef HRESULT(set_display_layer)(void *this, int display_layer, char x);
-  set_display_layer *f = (set_display_layer *)calc_offset(g_aviutl2_module, g_version_info.set_display_layer_func);
-  void *ctx = *(void **)calc_offset(g_aviutl2_module, g_version_info.layer_window_context);
-  f(ctx, layer, 1);
-}
-
-static void call_set_display_zoom(void *userdata) {
-  int const zoom = *(int const *)userdata;
-  typedef HRESULT(set_display_zoom)(void *this, int *display_zoom);
-  set_display_zoom *f = (set_display_zoom *)calc_offset(g_aviutl2_module, g_version_info.set_display_zoom_func);
-  set_project_data_int(g_version_info.display_zoom_offset, zoom);
-  void *ctx = *(void **)calc_offset(g_aviutl2_module, g_version_info.layer_window_context);
-  int *display_zoom_ptr = (int *)calc_offset(get_internal_object_ptr(), g_version_info.display_zoom_offset);
-  f(ctx, display_zoom_ptr);
 }
 
 size_t gcmz_aviutl2_find_manager_windows(void **window, size_t const window_len, struct ov_error *const err) {
@@ -611,68 +567,29 @@ void gcmz_aviutl2_cleanup(void) {
 
 HWND gcmz_aviutl2_get_main_window(void) { return g_aviutl2_window[0]; }
 
-struct extended_project_info_context {
-  int *display_frame;
-  int *display_layer;
-  int *display_zoom;
-};
-
-static void get_extended_project_info_internal(void *data) {
-  struct extended_project_info_context *ctx = (struct extended_project_info_context *)data;
-  if (!ctx || !is_valid_version_info()) {
+static void get_display_zoom_internal(void *data) {
+  int *display_zoom = (int *)data;
+  if (!display_zoom || !is_valid_version_info()) {
     return;
   }
-
-  if (ctx->display_frame && g_version_info.display_frame_offset) {
-    *ctx->display_frame = get_project_data_int(g_version_info.display_frame_offset);
-  }
-  if (ctx->display_layer && g_version_info.display_layer_offset) {
-    *ctx->display_layer = get_project_data_int(g_version_info.display_layer_offset);
-  }
-  if (ctx->display_zoom && g_version_info.display_zoom_offset) {
-    *ctx->display_zoom = get_project_data_int(g_version_info.display_zoom_offset);
+  if (g_version_info.display_zoom_offset) {
+    *display_zoom = get_project_data_int(g_version_info.display_zoom_offset);
   }
 }
 
-bool gcmz_aviutl2_get_extended_project_info(int *display_frame,
-                                            int *display_layer,
-                                            int *display_zoom,
-                                            struct ov_error *const err) {
+bool gcmz_aviutl2_get_display_zoom(int *display_zoom, struct ov_error *const err) {
+  if (!display_zoom) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
   if (!is_valid_version_info()) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
     return false;
   }
 
-  struct extended_project_info_context ctx = {
-      .display_frame = display_frame,
-      .display_layer = display_layer,
-      .display_zoom = display_zoom,
-  };
-
-  gcmz_do_blocking(get_extended_project_info_internal, &ctx);
+  gcmz_do_blocking(get_display_zoom_internal, display_zoom);
 
   return true;
-}
-
-void gcmz_aviutl2_set_cursor_frame(int frame) {
-  if (!is_valid_version_info()) {
-    return;
-  }
-  gcmz_do_blocking(call_set_cursor_frame, (void *)&frame);
-}
-
-void gcmz_aviutl2_set_display_layer(int layer) {
-  if (!is_valid_version_info()) {
-    return;
-  }
-  gcmz_do_blocking(call_set_display_layer, (void *)&layer);
-}
-
-void gcmz_aviutl2_set_display_zoom(int zoom) {
-  if (!is_valid_version_info()) {
-    return;
-  }
-  gcmz_do_blocking(call_set_display_zoom, (void *)&zoom);
 }
 
 char const *gcmz_aviutl2_get_detected_version(void) {

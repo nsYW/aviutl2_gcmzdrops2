@@ -145,6 +145,72 @@ cleanup:
   return result;
 }
 
+/**
+ * @brief Context for set_display_layer_frame call
+ */
+struct set_display_layer_context {
+  int layer; ///< Target display layer
+};
+
+/**
+ * @brief Edit section callback for setting display layer via official API
+ */
+static void set_display_layer_edit_section(void *param, struct aviutl2_edit_section *edit) {
+  struct set_display_layer_context *const ctx = (struct set_display_layer_context *)param;
+  if (!ctx || !edit || !edit->set_display_layer_frame) {
+    return;
+  }
+  // Keep current display frame, only change layer
+  int const display_frame = edit->info ? edit->info->display_frame_start : 0;
+  edit->set_display_layer_frame(ctx->layer, display_frame);
+}
+
+/**
+ * @brief Set display layer via official API
+ *
+ * @param layer Target display layer
+ */
+static void set_display_layer_via_api(int const layer) {
+  if (!g_edit || !g_edit->call_edit_section_param) {
+    return;
+  }
+  struct set_display_layer_context ctx = {.layer = layer};
+  g_edit->call_edit_section_param(&ctx, set_display_layer_edit_section);
+}
+
+/**
+ * @brief Context for set_cursor_layer_frame call
+ */
+struct set_cursor_frame_context {
+  int frame; ///< Target cursor frame
+};
+
+/**
+ * @brief Edit section callback for setting cursor frame via official API
+ */
+static void set_cursor_frame_edit_section(void *param, struct aviutl2_edit_section *edit) {
+  struct set_cursor_frame_context *const ctx = (struct set_cursor_frame_context *)param;
+  if (!ctx || !edit || !edit->set_cursor_layer_frame) {
+    return;
+  }
+  // Keep current layer, only change frame
+  int const layer = edit->info ? edit->info->layer : 0;
+  edit->set_cursor_layer_frame(layer, ctx->frame);
+}
+
+/**
+ * @brief Set cursor frame via official API
+ *
+ * @param frame Target cursor frame
+ */
+static void set_cursor_frame_via_api(int const frame) {
+  if (!g_edit || !g_edit->call_edit_section_param) {
+    return;
+  }
+  struct set_cursor_frame_context ctx = {.frame = frame};
+  g_edit->call_edit_section_param(&ctx, set_cursor_frame_edit_section);
+}
+
 struct cursor_position_params {
   int x;
   int y;
@@ -161,31 +227,16 @@ static bool determine_cursor_position(int const target_layer,
 
   bool result = false;
 
-  int display_frame, display_layer, display_zoom;
+  int display_zoom;
   struct aviutl2_edit_info edit_info = {0};
   struct gcmz_analyze_result capture_result = {0};
   int drop_layer_offset = 0;
 
   {
     g_edit->get_edit_info(&edit_info, sizeof(edit_info));
-    if (!gcmz_aviutl2_get_extended_project_info(&display_frame, &display_layer, &display_zoom, err)) {
+    if (!gcmz_aviutl2_get_display_zoom(&display_zoom, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
-    }
-    if (display_zoom < 10000) {
-      gcmz_logf_verbose(NULL,
-                        "%1$d",
-                        "Current display zoom is %1$d < 10000. Setting display zoom to 10000 for drop analysis.",
-                        display_zoom);
-      gcmz_aviutl2_set_display_zoom(10000);
-      if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, err)) {
-        OV_ERROR_ADD_TRACE(err);
-        goto cleanup;
-      }
-      if (display_zoom != 10000) {
-        OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, gettext("failed to set display zoom"));
-        goto cleanup;
-      }
     }
 
     if (!gcmz_analyze_run(g_capture, display_zoom, &capture_result, NULL, NULL, err)) {
@@ -197,37 +248,34 @@ static bool determine_cursor_position(int const target_layer,
     if (target_layer == 0) {
       layer = edit_info.layer; // Current selected layer
     } else if (target_layer < 0) {
-      layer = -target_layer + display_layer;
+      layer = -target_layer + edit_info.display_layer_start;
     } else {
       layer = target_layer - 1;
     }
 
     int const n_layer = capture_result.effective_area.height / capture_result.layer_height;
-    if (layer < display_layer || display_layer + n_layer <= layer) {
+    if (layer < edit_info.display_layer_start || edit_info.display_layer_start + n_layer <= layer) {
       // Scroll to bring the target layer on-screen with minimum scroll distance
       int to;
-      if (layer < display_layer) {
+      if (layer < edit_info.display_layer_start) {
         to = layer;
       } else {
         to = layer < n_layer - 1 ? 0 : layer - (n_layer - 1);
       }
-      gcmz_aviutl2_set_display_layer(to);
-      if (!gcmz_aviutl2_get_extended_project_info(NULL, &display_layer, NULL, err)) {
-        OV_ERROR_ADD_TRACE(err);
-        goto cleanup;
-      }
-      if (display_layer != to) {
+      set_display_layer_via_api(to);
+      g_edit->get_edit_info(&edit_info, sizeof(edit_info));
+      if (edit_info.display_layer_start != to) {
         OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to scroll");
         goto cleanup;
       }
     }
-    drop_layer_offset = layer - display_layer;
+    drop_layer_offset = layer - edit_info.display_layer_start;
 
     if (capture_result.cursor.width == 0 || capture_result.cursor.height == 0) {
       // Move the cursor to bring it on-screen as it appears to be off-screen
       int const pos = edit_info.frame;
-      gcmz_aviutl2_set_cursor_frame(pos ? pos - 1 : pos + 1);
-      gcmz_aviutl2_set_cursor_frame(pos);
+      set_cursor_frame_via_api(pos ? pos - 1 : pos + 1);
+      set_cursor_frame_via_api(pos);
     }
 
     if (!gcmz_analyze_run(g_capture, display_zoom, &capture_result, NULL, NULL, err)) {
@@ -499,7 +547,7 @@ cleanup:
     struct aviutl2_edit_info edit_info = {0};
     g_edit->get_edit_info(&edit_info, sizeof(edit_info));
     int const move_to = edit_info.frame + api_ctx->frame_advance;
-    gcmz_aviutl2_set_cursor_frame(move_to);
+    set_cursor_frame_via_api(move_to);
     g_edit->get_edit_info(&edit_info, sizeof(edit_info));
     if (move_to != edit_info.frame) {
       gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to move cursor after drop"));
@@ -896,7 +944,7 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
     int display_zoom = -1;
     bool success = false;
 
-    if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, &err)) {
+    if (!gcmz_aviutl2_get_display_zoom(&display_zoom, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to get display zoom for debug capture");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -1012,19 +1060,12 @@ static void debug_output_info(void) {
     gcmz_logf_warn(NULL, NULL, "g_edit is not available");
   }
 
-  gcmz_logf_info(NULL, NULL, "--- extended_project_info ---");
-  int display_frame = 0;
-  int display_layer = 0;
+  gcmz_logf_info(NULL, NULL, "--- display_zoom ---");
   int display_zoom = 0;
-  if (gcmz_aviutl2_get_extended_project_info(&display_frame, &display_layer, &display_zoom, &err)) {
-    gcmz_logf_info(NULL,
-                   NULL,
-                   "[extended] display_frame: %d / display_layer: %d / display_zoom: %d",
-                   display_frame,
-                   display_layer,
-                   display_zoom);
+  if (gcmz_aviutl2_get_display_zoom(&display_zoom, &err)) {
+    gcmz_logf_info(NULL, NULL, "display_zoom: %d", display_zoom);
   } else {
-    gcmz_logf_warn(&err, NULL, "gcmz_aviutl2_get_extended_project_info failed");
+    gcmz_logf_warn(&err, NULL, "gcmz_aviutl2_get_display_zoom failed");
     OV_ERROR_DESTROY(&err);
   }
 }
@@ -1047,7 +1088,7 @@ static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_eve
     int display_zoom = 0;
     bool success = false;
 
-    if (!gcmz_aviutl2_get_extended_project_info(NULL, NULL, &display_zoom, &err)) {
+    if (!gcmz_aviutl2_get_display_zoom(&display_zoom, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }

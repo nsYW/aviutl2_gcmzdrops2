@@ -66,39 +66,13 @@ NODISCARD HWND gcmz_aviutl2_get_main_window(void);
 NODISCARD size_t gcmz_aviutl2_find_manager_windows(void **window, size_t window_len, struct ov_error *const err);
 
 /**
- * @brief Get extended project information not provided by official API
+ * @brief Get current display zoom level (not provided by official API)
  *
- * @param display_frame [out] Current display frame, can be NULL if not needed
- * @param display_layer [out] Current display layer, can be NULL if not needed
- * @param display_zoom [out] Current display zoom, can be NULL if not needed
+ * @param display_zoom [out] Current display zoom
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
-NODISCARD bool gcmz_aviutl2_get_extended_project_info(int *display_frame,
-                                                      int *display_layer,
-                                                      int *display_zoom,
-                                                      struct ov_error *const err);
-
-/**
- * @brief Set current cursor frame position
- *
- * @param frame Frame number to set
- */
-void gcmz_aviutl2_set_cursor_frame(int frame);
-
-/**
- * @brief Set current display layer
- *
- * @param layer Layer number to set
- */
-void gcmz_aviutl2_set_display_layer(int layer);
-
-/**
- * @brief Set current display zoom level
- *
- * @param zoom Zoom level to set
- */
-void gcmz_aviutl2_set_display_zoom(int zoom);
+NODISCARD bool gcmz_aviutl2_get_display_zoom(int *display_zoom, struct ov_error *const err);
 
 /**
  * @brief Get detected AviUtl2 version name
