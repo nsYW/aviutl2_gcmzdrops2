@@ -46,6 +46,12 @@
 - [ini:exists](#iniexists)
 - [文字列への変換](#文字列への変換)
 
+### json モジュール
+
+- [概要](#json-概要)
+- [json.decode](#jsondecode)
+- [json.encode](#jsonencode)
+
 ---
 
 # ハンドラースクリプト
@@ -1206,3 +1212,188 @@ if f then
     f:close()
 end
 ```
+
+---
+
+# json モジュール
+
+## json 概要
+
+`json` モジュールは、JSON 形式のデータを解析（デコード）およびシリアライズ（エンコード）するための機能を提供します。
+
+`require('json')` で読み込むことで使用できます。
+
+### 基本的な使い方
+
+```lua
+local json = require('json')
+
+-- JSON 文字列をパースする
+local data = json.decode('{"name":"太郎","age":25}')
+print(data.name)  -- "太郎"
+print(data.age)   -- 25
+
+-- Lua テーブルを JSON 文字列に変換する
+local str = json.encode({name = "太郎", age = 25})
+print(str)  -- {"name":"太郎","age":25}
+```
+
+### 対応するデータ型
+
+JSON と Lua のデータ型は以下のように対応します：
+
+| JSON | Lua |
+|------|-----|
+| object | table（文字列キー） |
+| array | table（連番インデックス） |
+| string | string |
+| number | number |
+| true/false | boolean |
+| null | nil |
+
+---
+
+## json.decode
+
+JSON 文字列を Lua の値に変換します。
+
+### 構文
+
+```lua
+local value = json.decode(str)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `str` | string | パースする JSON 文字列（UTF-8） |
+
+### 戻り値
+
+パースされた Lua の値を返します。JSON オブジェクトは Lua テーブル、JSON 配列は連番インデックスを持つ Lua テーブルになります。
+
+### エラー
+
+以下の場合にエラーをスローします：
+
+- 引数が文字列でない場合
+- JSON の構文が不正な場合
+- 予期しない文字がある場合
+
+エラーメッセージには行番号と列番号が含まれます。
+
+### 例
+
+```lua
+local json = require('json')
+
+-- オブジェクトのパース
+local obj = json.decode('{"key": "value", "number": 42}')
+print(obj.key)     -- "value"
+print(obj.number)  -- 42
+
+-- 配列のパース
+local arr = json.decode('[1, 2, 3, "four"]')
+print(arr[1])  -- 1
+print(arr[4])  -- "four"
+
+-- ネストした構造
+local nested = json.decode('{"items": [{"id": 1}, {"id": 2}]}')
+print(nested.items[1].id)  -- 1
+
+-- null は nil になる
+local with_null = json.decode('{"value": null}')
+print(with_null.value)  -- nil
+
+-- ファイルから読み込む
+local f = io.open("data.json", "rb")
+if f then
+    local content = f:read("*a")
+    f:close()
+    local data = json.decode(content)
+    -- data を使用...
+end
+```
+
+---
+
+## json.encode
+
+Lua の値を JSON 文字列に変換します。
+
+### 構文
+
+```lua
+local str = json.encode(value)
+```
+
+### パラメーター
+
+| パラメーター | 型 | 説明 |
+|-----------|------|-------------|
+| `value` | any | JSON に変換する Lua の値 |
+
+### 戻り値
+
+JSON 形式の文字列を返します。
+
+### エラー
+
+以下の場合にエラーをスローします：
+
+- 循環参照がある場合
+- テーブルのキーが文字列と数値で混在している場合
+- 配列が疎（sparse）な場合（連続しない数値インデックス）
+- NaN、無限大などの特殊な数値の場合
+- 関数やユーザーデータなどエンコード不可能な型の場合
+
+### 配列とオブジェクトの判定
+
+テーブルは以下のルールで配列またはオブジェクトとして判定されます：
+
+- インデックス 1 に値がある、または空のテーブルの場合は配列として扱われます
+- それ以外は文字列キーを持つオブジェクトとして扱われます
+
+### 例
+
+```lua
+local json = require('json')
+
+-- オブジェクトのエンコード
+local str = json.encode({name = "花子", score = 100})
+print(str)  -- {"name":"花子","score":100}
+
+-- 配列のエンコード
+local arr_str = json.encode({1, 2, 3, "four"})
+print(arr_str)  -- [1,2,3,"four"]
+
+-- ネストした構造
+local nested_str = json.encode({
+    users = {
+        {id = 1, name = "Alice"},
+        {id = 2, name = "Bob"}
+    }
+})
+print(nested_str)
+
+-- nil/boolean のエンコード
+print(json.encode(nil))    -- null
+print(json.encode(true))   -- true
+print(json.encode(false))  -- false
+
+-- ファイルに保存
+local data = {version = "1.0", settings = {volume = 80}}
+local f = io.open("config.json", "wb")
+if f then
+    f:write(json.encode(data))
+    f:close()
+end
+```
+
+### 注意事項
+
+- 出力される JSON はコンパクト形式（余分な空白なし）です
+- オブジェクトのキー順序は保証されません
+- UTF-8 文字列はそのまま出力されます
+- 制御文字は適切にエスケープされます
