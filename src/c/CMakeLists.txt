@@ -171,6 +171,7 @@ add_library(gcmzdrops SHARED
   error.c
   file.c
   gcmz_dataobj.c
+  gcmzdrops.c
   gcmzdrops.rc
   i18n.rc
   ini_reader.c
