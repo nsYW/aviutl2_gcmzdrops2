@@ -107,9 +107,6 @@ struct gcmzdrops {
   cnd_t init_cond;
 };
 
-// Global context pointer for static callback functions
-static struct gcmzdrops *g_ctx = NULL;
-
 static bool get_style(struct gcmz_analyze_style *style, void *userdata, struct ov_error *const err) {
   (void)userdata;
 
@@ -154,66 +151,70 @@ cleanup:
  * @brief Context for set_display_layer_frame call
  */
 struct set_display_layer_context {
-  int layer; ///< Target display layer
+  struct gcmzdrops *ctx; ///< Parent context
+  int layer;             ///< Target display layer
 };
 
 /**
  * @brief Edit section callback for setting display layer via official API
  */
 static void set_display_layer_edit_section(void *param, struct aviutl2_edit_section *edit) {
-  struct set_display_layer_context *const ctx = (struct set_display_layer_context *)param;
-  if (!ctx || !edit || !edit->set_display_layer_frame) {
+  struct set_display_layer_context *const sdlc = (struct set_display_layer_context *)param;
+  if (!sdlc || !edit || !edit->set_display_layer_frame) {
     return;
   }
   // Keep current display frame, only change layer
   int const display_frame = edit->info ? edit->info->display_frame_start : 0;
-  edit->set_display_layer_frame(ctx->layer, display_frame);
+  edit->set_display_layer_frame(sdlc->layer, display_frame);
 }
 
 /**
  * @brief Set display layer via official API
  *
+ * @param ctx GCMZDrops context
  * @param layer Target display layer
  */
-static void set_display_layer_via_api(int const layer) {
-  if (!g_ctx->edit || !g_ctx->edit->call_edit_section_param) {
+static void set_display_layer_via_api(struct gcmzdrops *const ctx, int const layer) {
+  if (!ctx || !ctx->edit || !ctx->edit->call_edit_section_param) {
     return;
   }
-  struct set_display_layer_context ctx = {.layer = layer};
-  g_ctx->edit->call_edit_section_param(&ctx, set_display_layer_edit_section);
+  struct set_display_layer_context sdlc = {.ctx = ctx, .layer = layer};
+  ctx->edit->call_edit_section_param(&sdlc, set_display_layer_edit_section);
 }
 
 /**
  * @brief Context for set_cursor_layer_frame call
  */
 struct set_cursor_frame_context {
-  int frame; ///< Target cursor frame
+  struct gcmzdrops *ctx; ///< Parent context
+  int frame;             ///< Target cursor frame
 };
 
 /**
  * @brief Edit section callback for setting cursor frame via official API
  */
 static void set_cursor_frame_edit_section(void *param, struct aviutl2_edit_section *edit) {
-  struct set_cursor_frame_context *const ctx = (struct set_cursor_frame_context *)param;
-  if (!ctx || !edit || !edit->set_cursor_layer_frame) {
+  struct set_cursor_frame_context *const scfc = (struct set_cursor_frame_context *)param;
+  if (!scfc || !edit || !edit->set_cursor_layer_frame) {
     return;
   }
   // Keep current layer, only change frame
   int const layer = edit->info ? edit->info->layer : 0;
-  edit->set_cursor_layer_frame(layer, ctx->frame);
+  edit->set_cursor_layer_frame(layer, scfc->frame);
 }
 
 /**
  * @brief Set cursor frame via official API
  *
+ * @param ctx GCMZDrops context
  * @param frame Target cursor frame
  */
-static void set_cursor_frame_via_api(int const frame) {
-  if (!g_ctx->edit || !g_ctx->edit->call_edit_section_param) {
+static void set_cursor_frame_via_api(struct gcmzdrops *const ctx, int const frame) {
+  if (!ctx || !ctx->edit || !ctx->edit->call_edit_section_param) {
     return;
   }
-  struct set_cursor_frame_context ctx = {.frame = frame};
-  g_ctx->edit->call_edit_section_param(&ctx, set_cursor_frame_edit_section);
+  struct set_cursor_frame_context scfc = {.ctx = ctx, .frame = frame};
+  ctx->edit->call_edit_section_param(&scfc, set_cursor_frame_edit_section);
 }
 
 struct cursor_position_params {
@@ -222,10 +223,11 @@ struct cursor_position_params {
   void *window;
 };
 
-static bool determine_cursor_position(int const target_layer,
+static bool determine_cursor_position(struct gcmzdrops *const ctx,
+                                      int const target_layer,
                                       struct cursor_position_params *const params,
                                       struct ov_error *const err) {
-  if (!params) {
+  if (!ctx || !params) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
@@ -238,13 +240,13 @@ static bool determine_cursor_position(int const target_layer,
   int drop_layer_offset = 0;
 
   {
-    g_ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
+    ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
     if (!gcmz_aviutl2_get_display_zoom(&display_zoom, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
-    if (!gcmz_analyze_run(g_ctx->capture, display_zoom, &capture_result, NULL, NULL, err)) {
+    if (!gcmz_analyze_run(ctx->capture, display_zoom, &capture_result, NULL, NULL, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -267,8 +269,8 @@ static bool determine_cursor_position(int const target_layer,
       } else {
         to = layer < n_layer - 1 ? 0 : layer - (n_layer - 1);
       }
-      set_display_layer_via_api(to);
-      g_ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
+      set_display_layer_via_api(ctx, to);
+      ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
       if (edit_info.display_layer_start != to) {
         OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to scroll");
         goto cleanup;
@@ -279,11 +281,11 @@ static bool determine_cursor_position(int const target_layer,
     if (capture_result.cursor.width == 0 || capture_result.cursor.height == 0) {
       // Move the cursor to bring it on-screen as it appears to be off-screen
       int const pos = edit_info.frame;
-      set_cursor_frame_via_api(pos ? pos - 1 : pos + 1);
-      set_cursor_frame_via_api(pos);
+      set_cursor_frame_via_api(ctx, pos ? pos - 1 : pos + 1);
+      set_cursor_frame_via_api(ctx, pos);
     }
 
-    if (!gcmz_analyze_run(g_ctx->capture, display_zoom, &capture_result, NULL, NULL, err)) {
+    if (!gcmz_analyze_run(ctx->capture, display_zoom, &capture_result, NULL, NULL, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -374,27 +376,30 @@ struct create_object_context {
  * @brief Edit section callback for creating object via official API
  */
 static void create_object_edit_section(void *param, struct aviutl2_edit_section *edit) {
-  struct create_object_context *const ctx = (struct create_object_context *)param;
-  if (!ctx || !edit || !edit->create_object_from_alias) {
+  struct create_object_context *const coc = (struct create_object_context *)param;
+  if (!coc || !edit || !edit->create_object_from_alias) {
     return;
   }
-  int const frame = (ctx->frame == 0 && edit->info) ? edit->info->frame : ctx->frame;
-  int const layer = (ctx->layer == 0 && edit->info) ? edit->info->layer : ctx->layer;
-  aviutl2_object_handle obj = edit->create_object_from_alias(ctx->alias_content, layer, frame, ctx->length);
-  ctx->success = (obj != NULL);
+  int const frame = (coc->frame == 0 && edit->info) ? edit->info->frame : coc->frame;
+  int const layer = (coc->layer == 0 && edit->info) ? edit->info->layer : coc->layer;
+  aviutl2_object_handle obj = edit->create_object_from_alias(coc->alias_content, layer, frame, coc->length);
+  coc->success = (obj != NULL);
 }
 
 /**
  * @brief Create object using official API
  *
+ * @param ctx GCMZDrops context
  * @param files File list containing single .object file
  * @param layer Target layer (1-based, following external API convention)
  * @param err Error information on failure
  * @return true on success
  */
-static bool
-create_object_via_official_api(struct gcmz_file_list const *const files, int const layer, struct ov_error *const err) {
-  if (!files || !g_ctx->edit) {
+static bool create_object_via_official_api(struct gcmzdrops *const ctx,
+                                           struct gcmz_file_list const *const files,
+                                           int const layer,
+                                           struct ov_error *const err) {
+  if (!ctx || !files || !ctx->edit) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
@@ -435,7 +440,7 @@ create_object_via_official_api(struct gcmz_file_list const *const files, int con
     }
     content[size] = '\0';
 
-    struct create_object_context ctx = {
+    struct create_object_context coc = {
         .alias_content = content,
         .layer = layer,
         .frame = 0,  // Use current cursor position
@@ -443,17 +448,17 @@ create_object_via_official_api(struct gcmz_file_list const *const files, int con
         .success = false,
     };
 
-    if (!g_ctx->edit->call_edit_section_param) {
+    if (!ctx->edit->call_edit_section_param) {
       OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "call_edit_section_param not available");
       goto cleanup;
     }
 
-    if (!g_ctx->edit->call_edit_section_param(&ctx, create_object_edit_section)) {
+    if (!ctx->edit->call_edit_section_param(&coc, create_object_edit_section)) {
       OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "call_edit_section_param failed");
       goto cleanup;
     }
 
-    if (!ctx.success) {
+    if (!coc.success) {
       OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "create_object_from_alias returned NULL");
       goto cleanup;
     }
@@ -475,6 +480,7 @@ cleanup:
  * @brief Context for external API drop completion callback
  */
 struct external_api_drop_context {
+  struct gcmzdrops *ctx;                           ///< Parent context
   int layer;                                       ///< Target layer (1-based)
   int frame_advance;                               ///< Frame advance after drop
   gcmz_api_request_complete_func request_complete; ///< Callback to signal request completion
@@ -489,34 +495,35 @@ struct external_api_drop_context {
  * 1. Handle single .object files via official API (call complete with false)
  * 2. Modify coordinates and call complete with true for traditional drop
  */
-static void on_drop_completion(struct gcmz_drop_complete_context *const ctx,
+static void on_drop_completion(struct gcmz_drop_complete_context *const dcc,
                                gcmz_drop_complete_func const complete,
                                void *const userdata) {
-  if (!ctx || !complete) {
+  if (!dcc || !complete) {
     return;
   }
 
   // userdata is only set for external API drops (heap-allocated, must be freed)
   struct external_api_drop_context *api_ctx = (struct external_api_drop_context *)userdata;
-  if (!api_ctx) {
+  if (!api_ctx || !api_ctx->ctx) {
     // invalid state, just complete drop
     if (complete) {
-      complete(ctx, true);
+      complete(dcc, true);
     }
     return;
   }
 
+  struct gcmzdrops *const ctx = api_ctx->ctx;
   struct ov_error err = {0};
   bool execute_drop = true;
 
   {
     // Handle single .object files via official API
     // When api_ctx->layer is negative, it means relative positioning from the current scroll position.
-    // To obtain that position, data retrieval in an environment where g_ctx->unknown_binary == false is required,
+    // To obtain that position, data retrieval in an environment where ctx->unknown_binary == false is required,
     // but it seems unnecessary to support that functionality, so it is excluded.
-    if (is_single_object_file(ctx->final_files) && api_ctx->layer >= 0) {
+    if (is_single_object_file(dcc->final_files) && api_ctx->layer >= 0) {
       // Try to create object via official API
-      if (create_object_via_official_api(ctx->final_files, api_ctx->layer, &err)) {
+      if (create_object_via_official_api(ctx, dcc->final_files, api_ctx->layer, &err)) {
         // Success: drop handled via official API, call complete with false (DragLeave)
         execute_drop = false;
         goto cleanup;
@@ -529,7 +536,7 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const ctx,
     // For non-.object files or official API failure, calculate proper coordinates
     // using determine_cursor_position for traditional drop flow
     struct cursor_position_params pos_params = {0};
-    if (!determine_cursor_position(api_ctx->layer, &pos_params, &err)) {
+    if (!determine_cursor_position(ctx, api_ctx->layer, &pos_params, &err)) {
       // Failed to determine cursor position - log warning and use default coordinates
       gcmz_logf_warn(
           &err, "%1$hs", "%1$hs", gettext("failed to determine cursor position, using default drop coordinates"));
@@ -538,22 +545,22 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const ctx,
       goto cleanup;
     }
 
-    ctx->window = pos_params.window;
-    ctx->x = pos_params.x;
-    ctx->y = pos_params.y;
-    gcmz_logf_verbose(NULL, NULL, "drop to: window=%1$px x=%2$d, y=%3$d", ctx->window, ctx->x, ctx->y);
+    dcc->window = pos_params.window;
+    dcc->x = pos_params.x;
+    dcc->y = pos_params.y;
+    gcmz_logf_verbose(NULL, NULL, "drop to: window=%1$px x=%2$d, y=%3$d", dcc->window, dcc->x, dcc->y);
   }
 
 cleanup:
-  complete(ctx, execute_drop);
+  complete(dcc, execute_drop);
 
   // Handle frame advance after drop completes
   if (api_ctx->frame_advance != 0) {
     struct aviutl2_edit_info edit_info = {0};
-    g_ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
+    ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
     int const move_to = edit_info.frame + api_ctx->frame_advance;
-    set_cursor_frame_via_api(move_to);
-    g_ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
+    set_cursor_frame_via_api(ctx, move_to);
+    ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
     if (move_to != edit_info.frame) {
       gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to move cursor after drop"));
       OV_ERROR_DESTROY(&err);
@@ -568,6 +575,11 @@ cleanup:
 
 static void request_api(struct gcmz_api_request_params *const params, gcmz_api_request_complete_func const complete) {
   if (!params || !complete) {
+    return;
+  }
+
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)params->userdata;
+  if (!ctx) {
     return;
   }
 
@@ -587,6 +599,7 @@ static void request_api(struct gcmz_api_request_params *const params, gcmz_api_r
       goto cleanup;
     }
     *api_ctx = (struct external_api_drop_context){
+        .ctx = ctx,
         .layer = params->layer,
         .frame_advance = params->frame_advance,
         .request_complete = complete,
@@ -599,7 +612,7 @@ static void request_api(struct gcmz_api_request_params *const params, gcmz_api_r
 
     // Get window from window list - use first available window
     size_t num_windows = 0;
-    struct gcmz_window_info const *const windows = gcmz_window_list_get(g_ctx->window_list, &num_windows);
+    struct gcmz_window_info const *const windows = gcmz_window_list_get(ctx->window_list, &num_windows);
     if (!windows || num_windows == 0) {
       OV_ERROR_SET(
           &err, ov_error_type_generic, ov_error_generic_fail, "no registered windows available for drop target");
@@ -623,7 +636,7 @@ static void request_api(struct gcmz_api_request_params *const params, gcmz_api_r
     // External API uses gcmz_drop_simulate_drop_external to call Lua handlers
     // independently before passing to the original IDropTarget (bypassing hook chain)
     bool const drop_ok = gcmz_drop_simulate_drop_external(
-        g_ctx->drop, window, dataobj, x, y, params->use_exo_converter, on_drop_completion, api_ctx, &err);
+        ctx->drop, window, dataobj, x, y, params->use_exo_converter, on_drop_completion, api_ctx, &err);
     IDataObject_Release((IDataObject *)dataobj);
     dataobj = NULL;
     if (!drop_ok) {
@@ -649,9 +662,8 @@ cleanup:
 }
 
 static void update_api_project_data(void *userdata) {
-  (void)userdata;
-
-  if (!g_ctx->edit || !g_ctx->api) {
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx || !ctx->edit || !ctx->api) {
     return;
   }
 
@@ -659,8 +671,8 @@ static void update_api_project_data(void *userdata) {
   struct aviutl2_edit_info ei = {0};
   bool success = false;
 
-  g_ctx->edit->get_edit_info(&ei, sizeof(ei));
-  if (!gcmz_api_set_project_data(g_ctx->api,
+  ctx->edit->get_edit_info(&ei, sizeof(ei));
+  if (!gcmz_api_set_project_data(ctx->api,
                                  &(struct gcmz_project_data){
                                      .width = ei.width,
                                      .height = ei.height,
@@ -668,7 +680,7 @@ static void update_api_project_data(void *userdata) {
                                      .video_scale = ei.scale,
                                      .sample_rate = ei.sample_rate,
                                      .audio_ch = 2,
-                                     .project_path = g_ctx->project_path,
+                                     .project_path = ctx->project_path,
                                  },
                                  &err)) {
     OV_ERROR_ADD_TRACE(&err);
@@ -682,7 +694,7 @@ static void update_api_project_data(void *userdata) {
                       ei.rate,
                       ei.scale,
                       ei.sample_rate);
-    gcmz_logf_verbose(NULL, "%1$ls", "project path: %1$ls", g_ctx->project_path ? g_ctx->project_path : L"(NULL)");
+    gcmz_logf_verbose(NULL, "%1$ls", "project path: %1$ls", ctx->project_path ? ctx->project_path : L"(NULL)");
   }
   success = true;
 cleanup:
@@ -691,38 +703,48 @@ cleanup:
   }
 }
 
-static bool create_external_api_once(struct ov_error *const err) {
+static bool create_external_api_once(struct gcmzdrops *const ctx, struct ov_error *const err) {
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+
   bool result = false;
 
-  g_ctx->api = gcmz_api_create(
+  ctx->api = gcmz_api_create(
       &(struct gcmz_api_options){
           .request_callback = request_api,
           .update_callback = NULL,
-          .userdata = NULL,
-          .aviutl2_ver = g_ctx->aviutl2_version,
+          .userdata = ctx,
+          .aviutl2_ver = ctx->aviutl2_version,
           .gcmz_ver = GCMZ_VERSION_UINT32,
       },
       err);
-  if (!g_ctx->api) {
+  if (!ctx->api) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
   }
   gcmz_logf_verbose(NULL, "%1$hs", "%1$hs", pgettext("external_api", "external API initialized successfully"));
-  gcmz_do(update_api_project_data, NULL);
+  gcmz_do(update_api_project_data, ctx);
   result = true;
 
 cleanup:
   return result;
 }
 
-static bool create_external_api(bool const use_retry, struct ov_error *const err) {
-  if (g_ctx->api) {
+static bool create_external_api(struct gcmzdrops *const ctx, bool const use_retry, struct ov_error *const err) {
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+
+  if (ctx->api) {
     OV_ERROR_SET(
         err, ov_error_type_generic, ov_error_generic_fail, pgettext("external_api", "external API already exists"));
     return false;
   }
 
-  if (g_ctx->unknown_binary) {
+  if (ctx->unknown_binary) {
     gcmz_logf_warn(NULL,
                    "%s",
                    "%s",
@@ -731,7 +753,7 @@ static bool create_external_api(bool const use_retry, struct ov_error *const err
   }
 
   if (!use_retry) {
-    return create_external_api_once(err);
+    return create_external_api_once(ctx, err);
   }
 
   wchar_t title[256];
@@ -739,7 +761,7 @@ static bool create_external_api(bool const use_retry, struct ov_error *const err
   wchar_t content[1024];
 
   while (true) {
-    if (create_external_api_once(err)) {
+    if (create_external_api_once(ctx, err)) {
       return true;
     }
 
@@ -931,7 +953,7 @@ static void log_analyze(struct gcmz_analyze_result const *const result) {
 }
 
 static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_event *const event) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   static wchar_t label[64];
   switch (event->type) {
   case gcmz_tray_callback_query_info:
@@ -944,6 +966,9 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
     break;
 
   case gcmz_tray_callback_clicked: {
+    if (!ctx) {
+      break;
+    }
     struct ov_error err = {0};
     struct gcmz_analyze_result result = {0};
     int display_zoom = -1;
@@ -954,7 +979,7 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
-    if (!gcmz_analyze_run(g_ctx->capture, display_zoom, &result, complete_analyze, NULL, &err)) {
+    if (!gcmz_analyze_run(ctx->capture, display_zoom, &result, complete_analyze, NULL, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to capture for debug");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -972,36 +997,42 @@ static void tray_menu_debug_capture(void *userdata, struct gcmz_tray_callback_ev
   }
 }
 
-static void update_tray_visibility(void) {
+static void update_tray_visibility(struct gcmzdrops *const ctx) {
+  if (!ctx) {
+    return;
+  }
   struct ov_error err = {0};
   bool show_debug_menu = false;
-  if (!gcmz_config_get_show_debug_menu(g_ctx->config, &show_debug_menu, &err)) {
+  if (!gcmz_config_get_show_debug_menu(ctx->config, &show_debug_menu, &err)) {
     gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to get show debug menu setting"));
     OV_ERROR_DESTROY(&err);
     return;
   }
-  if (!gcmz_tray_set_visible(g_ctx->tray, show_debug_menu, &err)) {
+  if (!gcmz_tray_set_visible(ctx->tray, show_debug_menu, &err)) {
     gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to update tray icon visibility"));
     OV_ERROR_DESTROY(&err);
   }
 }
 
-static void config_menu_handler(HWND const hwnd, HINSTANCE const dll_hinst) {
+void gcmzdrops_show_config_dialog(struct gcmzdrops *const ctx, void *const hwnd, void *const dll_hinst) {
   (void)dll_hinst;
+  if (!ctx) {
+    return;
+  }
   struct ov_error err = {0};
-  bool const running = g_ctx->api != NULL;
+  bool const running = ctx->api != NULL;
   bool external_api_enabled = false;
   bool success = false;
 
   {
-    if (!gcmz_config_dialog_show(g_ctx->config, hwnd, running, &err)) {
+    if (!gcmz_config_dialog_show(ctx->config, (HWND)hwnd, running, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
 
-    update_tray_visibility();
+    update_tray_visibility(ctx);
 
-    if (!gcmz_config_get_external_api(g_ctx->config, &external_api_enabled, &err)) {
+    if (!gcmz_config_get_external_api(ctx->config, &external_api_enabled, &err)) {
       gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to get external API setting"));
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
@@ -1011,13 +1042,13 @@ static void config_menu_handler(HWND const hwnd, HINSTANCE const dll_hinst) {
       goto cleanup;
     }
     if (external_api_enabled) {
-      if (!create_external_api(true, &err)) {
+      if (!create_external_api(ctx, true, &err)) {
         gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to initialize external API"));
         OV_ERROR_ADD_TRACE(&err);
         goto cleanup;
       }
     } else {
-      gcmz_api_destroy(&g_ctx->api);
+      gcmz_api_destroy(&ctx->api);
     }
   }
 
@@ -1032,7 +1063,7 @@ cleanup:
 
 #ifndef NDEBUG
 
-static void debug_output_info(void) {
+static void debug_output_info(struct gcmzdrops *const ctx) {
   gcmz_logf_verbose(NULL, "%1$s", "† verbose output †");
   gcmz_logf_info(NULL, "%1$s", "† info output †");
   gcmz_logf_warn(NULL, "%1$s", "† warn output †");
@@ -1040,10 +1071,15 @@ static void debug_output_info(void) {
 
   struct ov_error err = {0};
 
-  gcmz_logf_info(NULL, NULL, "--- g_ctx->edit (0x%p) ---", (void *)g_ctx->edit);
-  if (g_ctx->edit) {
+  if (!ctx) {
+    gcmz_logf_warn(NULL, NULL, "ctx is NULL");
+    return;
+  }
+
+  gcmz_logf_info(NULL, NULL, "--- ctx->edit (0x%p) ---", (void *)ctx->edit);
+  if (ctx->edit) {
     struct aviutl2_edit_info info = {0};
-    g_ctx->edit->get_edit_info(&info, sizeof(info));
+    ctx->edit->get_edit_info(&info, sizeof(info));
     gcmz_logf_info(NULL,
                    NULL,
                    "[edit_section] width: %d / height: %d / rate: %d / scale: %d / sample_rate: %d",
@@ -1061,10 +1097,10 @@ static void debug_output_info(void) {
                    info.layer_max);
     gcmz_logf_info(NULL,
                    NULL,
-                   "g_ctx->project_path: %ls",
-                   (g_ctx->project_path && g_ctx->project_path[0] != L'\0') ? g_ctx->project_path : L"(null)");
+                   "ctx->project_path: %ls",
+                   (ctx->project_path && ctx->project_path[0] != L'\0') ? ctx->project_path : L"(null)");
   } else {
-    gcmz_logf_warn(NULL, NULL, "g_ctx->edit is not available");
+    gcmz_logf_warn(NULL, NULL, "ctx->edit is not available");
   }
 
   gcmz_logf_info(NULL, NULL, "--- display_zoom ---");
@@ -1078,7 +1114,7 @@ static void debug_output_info(void) {
 }
 
 static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_event *const event) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   static wchar_t label[64];
   switch (event->type) {
   case gcmz_tray_callback_query_info:
@@ -1090,6 +1126,9 @@ static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_eve
     break;
 
   case gcmz_tray_callback_clicked: {
+    if (!ctx) {
+      break;
+    }
     struct ov_error err = {0};
     struct gcmz_analyze_result capture = {0};
     int display_zoom = 0;
@@ -1099,13 +1138,13 @@ static void tray_menu_debug_output(void *userdata, struct gcmz_tray_callback_eve
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
-    if (!gcmz_analyze_run(g_ctx->capture, display_zoom, &capture, NULL, NULL, &err)) {
+    if (!gcmz_analyze_run(ctx->capture, display_zoom, &capture, NULL, NULL, &err)) {
       gcmz_logf_error(&err, "%s", "%s", "failed to capture for debug output");
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
     log_analyze(&capture);
-    debug_output_info();
+    debug_output_info(ctx);
     success = true;
 
   cleanup:
@@ -1125,7 +1164,7 @@ static void tray_menu_test_complete_external_api(struct gcmz_api_request_params 
 }
 
 static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callback_event *const event) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   static wchar_t label[64];
   switch (event->type) {
   case gcmz_tray_callback_query_info:
@@ -1137,6 +1176,9 @@ static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callbac
     break;
 
   case gcmz_tray_callback_clicked: {
+    if (!ctx) {
+      break;
+    }
     struct ov_error err = {0};
     struct ovl_file *file = NULL;
     wchar_t *temp_path = NULL;
@@ -1178,7 +1220,7 @@ static void tray_menu_test_external_api(void *userdata, struct gcmz_tray_callbac
           .frame_advance = 3,
           .use_exo_converter = false,
           .err = &err,
-          .userdata = NULL,
+          .userdata = ctx,
       };
 
       request_api(&params, tray_menu_test_complete_external_api);
@@ -1214,7 +1256,7 @@ static void tray_menu_test_complete_external_api_object(struct gcmz_api_request_
 }
 
 static void tray_menu_test_external_api_object(void *userdata, struct gcmz_tray_callback_event *const event) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   static wchar_t label[64];
   switch (event->type) {
   case gcmz_tray_callback_query_info:
@@ -1226,6 +1268,9 @@ static void tray_menu_test_external_api_object(void *userdata, struct gcmz_tray_
     break;
 
   case gcmz_tray_callback_clicked: {
+    if (!ctx) {
+      break;
+    }
     struct ov_error err = {0};
     struct ovl_file *file = NULL;
     wchar_t *temp_path = NULL;
@@ -1323,7 +1368,7 @@ static void tray_menu_test_external_api_object(void *userdata, struct gcmz_tray_
           .frame_advance = 0,
           .use_exo_converter = false,
           .err = &err,
-          .userdata = NULL,
+          .userdata = ctx,
       };
 
       request_api(&params, tray_menu_test_complete_external_api_object);
@@ -1375,16 +1420,20 @@ static bool get_project_data_utf8(struct aviutl2_edit_info *edit_info,
                                   char **project_path,
                                   void *userdata,
                                   struct ov_error *const err) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
   bool success = false;
 
   if (edit_info) {
-    g_ctx->edit->get_edit_info(edit_info, sizeof(*edit_info));
+    ctx->edit->get_edit_info(edit_info, sizeof(*edit_info));
   }
   if (project_path) {
-    if (g_ctx->project_path && g_ctx->project_path[0] != L'\0') {
-      size_t const len = wcslen(g_ctx->project_path);
-      size_t const utf8_len = ov_wchar_to_utf8_len(g_ctx->project_path, len);
+    if (ctx->project_path && ctx->project_path[0] != L'\0') {
+      size_t const len = wcslen(ctx->project_path);
+      size_t const utf8_len = ov_wchar_to_utf8_len(ctx->project_path, len);
       if (utf8_len == 0) {
         OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
         goto cleanup;
@@ -1393,7 +1442,7 @@ static bool get_project_data_utf8(struct aviutl2_edit_info *edit_info,
         OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
         goto cleanup;
       }
-      ov_wchar_to_utf8(g_ctx->project_path, len, *project_path, utf8_len + 1, NULL);
+      ov_wchar_to_utf8(ctx->project_path, len, *project_path, utf8_len + 1, NULL);
     } else {
       *project_path = NULL;
     }
@@ -1404,8 +1453,12 @@ cleanup:
 }
 
 static wchar_t *get_save_path(wchar_t const *filename, void *userdata, struct ov_error *const err) {
-  (void)userdata;
-  wchar_t *const r = gcmz_config_get_save_path(g_ctx->config, filename, err);
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return NULL;
+  }
+  wchar_t *const r = gcmz_config_get_save_path(ctx->config, filename, err);
   if (!r) {
     OV_ERROR_ADD_TRACE(err);
     return NULL;
@@ -1414,15 +1467,19 @@ static wchar_t *get_save_path(wchar_t const *filename, void *userdata, struct ov
 }
 
 static bool copy_file(wchar_t const *source_file, wchar_t **final_file, void *userdata, struct ov_error *const err) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
   enum gcmz_processing_mode mode;
-  if (!gcmz_config_get_processing_mode(g_ctx->config, &mode, err)) {
+  if (!gcmz_config_get_processing_mode(ctx->config, &mode, err)) {
     OV_ERROR_ADD_TRACE(err);
     return false;
   }
   // gcmz_copy does not necessarily copy the file.
   // If a file with the same hash value exists at the destination, it returns that path.
-  if (!gcmz_copy(source_file, mode, get_save_path, NULL, final_file, err)) {
+  if (!gcmz_copy(source_file, mode, get_save_path, ctx, final_file, err)) {
     OV_ERROR_ADD_TRACE(err);
     return false;
   }
@@ -1509,7 +1566,11 @@ cleanup:
 }
 
 static char *get_save_path_utf8(void *userdata, char const *filename, struct ov_error *err) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return NULL;
+  }
   wchar_t *filename_w = NULL;
   wchar_t *dest_path_w = NULL;
   char *dest_path = NULL;
@@ -1533,7 +1594,7 @@ static char *get_save_path_utf8(void *userdata, char const *filename, struct ov_
     }
 
     // Get save path
-    dest_path_w = gcmz_config_get_save_path(g_ctx->config, filename_w, err);
+    dest_path_w = gcmz_config_get_save_path(ctx->config, filename_w, err);
     if (!dest_path_w) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
@@ -1576,17 +1637,17 @@ cleanup:
 
 static size_t
 get_window_list(struct gcmz_window_info *windows, size_t window_len, void *userdata, struct ov_error *const err) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   if (!windows || window_len == 0) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return SIZE_MAX;
   }
-  if (!g_ctx->window_list) {
+  if (!ctx || !ctx->window_list) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
     return SIZE_MAX;
   }
   size_t num_items = 0;
-  struct gcmz_window_info const *const items = gcmz_window_list_get(g_ctx->window_list, &num_items);
+  struct gcmz_window_info const *const items = gcmz_window_list_get(ctx->window_list, &num_items);
   if (!items || num_items == 0) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
     return SIZE_MAX;
@@ -1766,10 +1827,10 @@ capture_window(void *window, uint8_t **data, int *width, int *height, void *user
  * This callback is called frequently by gcmz_do_init, so performance is important.
  * Heavy processing should be avoided to prevent UI lag.
  *
- * @param userdata User-defined data pointer
+ * @param userdata User-defined data pointer (struct gcmzdrops*)
  */
 static void on_change_activate(void *const userdata) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   enum {
     max_windows = 8,
   };
@@ -1779,7 +1840,7 @@ static void on_change_activate(void *const userdata) {
   struct ov_error err = {0};
 
   {
-    if (!g_ctx->window_list) {
+    if (!ctx || !ctx->window_list) {
       success = true;
       goto cleanup;
     }
@@ -1816,15 +1877,15 @@ static void on_change_activate(void *const userdata) {
       // but on during finalization it might be gone.
       success = true;
     }
-    switch (gcmz_window_list_update(g_ctx->window_list, windows, found, &err)) {
+    switch (gcmz_window_list_update(ctx->window_list, windows, found, &err)) {
     case ov_false:
       // No changes, do nothing
       success = true;
       break;
     case ov_true:
-      if (g_ctx->drop) {
+      if (ctx->drop) {
         for (size_t i = 0; i < found; ++i) {
-          if (!gcmz_drop_register_window(g_ctx->drop, windows[i].window, &err)) {
+          if (!gcmz_drop_register_window(ctx->drop, windows[i].window, &err)) {
             gcmz_logf_warn(&err, "%s", "%s", "failed to register window for drag and drop");
             OV_ERROR_DESTROY(&err);
           }
@@ -1846,53 +1907,56 @@ cleanup:
 }
 
 static void finalize(void *const userdata) {
-  (void)userdata;
-  if (g_ctx->tray) {
-    gcmz_tray_destroy(&g_ctx->tray);
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    return;
   }
-  if (g_ctx->api) {
-    gcmz_api_destroy(&g_ctx->api);
+  if (ctx->tray) {
+    gcmz_tray_destroy(&ctx->tray);
   }
-  if (g_ctx->drop) {
-    gcmz_drop_destroy(&g_ctx->drop);
+  if (ctx->api) {
+    gcmz_api_destroy(&ctx->api);
   }
-  if (g_ctx->config) {
-    gcmz_config_destroy(&g_ctx->config);
+  if (ctx->drop) {
+    gcmz_drop_destroy(&ctx->drop);
   }
-  gcmz_analyze_destroy(&g_ctx->capture);
-  if (g_ctx->window_list) {
-    gcmz_window_list_destroy(&g_ctx->window_list);
+  if (ctx->config) {
+    gcmz_config_destroy(&ctx->config);
   }
-  if (g_ctx->project_path) {
-    OV_ARRAY_DESTROY(&g_ctx->project_path);
+  gcmz_analyze_destroy(&ctx->capture);
+  if (ctx->window_list) {
+    gcmz_window_list_destroy(&ctx->window_list);
+  }
+  if (ctx->project_path) {
+    OV_ARRAY_DESTROY(&ctx->project_path);
   }
   gcmz_delayed_cleanup_exit();
   gcmz_temp_remove_directory();
   gcmz_do_exit();
   gcmz_aviutl2_cleanup();
-  gcmz_do_sub_destroy(&g_ctx->do_sub);
-  if (g_ctx->mo) {
+  gcmz_do_sub_destroy(&ctx->do_sub);
+  if (ctx->mo) {
     mo_set_default(NULL);
-    mo_free(&g_ctx->mo);
+    mo_free(&ctx->mo);
   }
-  if (g_ctx->plugin_state != gcmzdrops_plugin_state_not_initialized) {
-    cnd_destroy(&g_ctx->init_cond);
-    mtx_destroy(&g_ctx->init_mtx);
-    g_ctx->plugin_state = gcmzdrops_plugin_state_not_initialized;
+  if (ctx->plugin_state != gcmzdrops_plugin_state_not_initialized) {
+    cnd_destroy(&ctx->init_cond);
+    mtx_destroy(&ctx->init_mtx);
+    ctx->plugin_state = gcmzdrops_plugin_state_not_initialized;
   }
 }
 
 static NATIVE_CHAR *get_project_path(void *userdata) {
-  (void)userdata;
-  if (!g_ctx->project_path || g_ctx->project_path[0] == L'\0') {
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx || !ctx->project_path || ctx->project_path[0] == L'\0') {
     return NULL;
   }
-  size_t const len = wcslen(g_ctx->project_path);
+  size_t const len = wcslen(ctx->project_path);
   NATIVE_CHAR *result = NULL;
   if (!OV_ARRAY_GROW(&result, len + 1)) {
     return NULL;
   }
-  wcscpy(result, g_ctx->project_path);
+  wcscpy(result, ctx->project_path);
   return result;
 }
 
@@ -2024,13 +2088,13 @@ static void get_media_info_edit_section(void *param, struct aviutl2_edit_section
 
 static bool
 get_media_info_utf8(char const *filepath, struct gcmz_lua_api_media_info *info, void *userdata, struct ov_error *err) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
   if (!filepath || !info) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
 
-  if (!g_ctx->edit || !g_ctx->edit->call_edit_section_param) {
+  if (!ctx || !ctx->edit || !ctx->edit->call_edit_section_param) {
     OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "edit handle not available");
     return false;
   }
@@ -2055,18 +2119,18 @@ get_media_info_utf8(char const *filepath, struct gcmz_lua_api_media_info *info, 
       goto cleanup;
     }
 
-    struct get_media_info_context ctx = {
+    struct get_media_info_context gmic = {
         .filepath_w = filepath_w,
         .info = info,
         .success = false,
     };
 
-    if (!g_ctx->edit->call_edit_section_param(&ctx, get_media_info_edit_section)) {
+    if (!ctx->edit->call_edit_section_param(&gmic, get_media_info_edit_section)) {
       OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "call_edit_section_param failed");
       goto cleanup;
     }
 
-    if (!ctx.success) {
+    if (!gmic.success) {
       OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "unsupported media file");
       goto cleanup;
     }
@@ -2097,7 +2161,10 @@ static void on_temp_cleanup(wchar_t const *const dir_path, void *const userdata)
 }
 
 static void delayed_initialization(void *userdata) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    return;
+  }
 
   DWORD const start_tick = GetTickCount();
   enum { delayed_window_registration_ms = 1000 };
@@ -2122,26 +2189,26 @@ static void delayed_initialization(void *userdata) {
                    "%1$hs",
                    pgettext("cleanup_stale_temporary_directories", "stale temporary directory cleanup complete"));
 
-    mtx_lock(&g_ctx->init_mtx);
-    while (g_ctx->plugin_state == gcmzdrops_plugin_state_initializing) {
-      cnd_wait(&g_ctx->init_cond, &g_ctx->init_mtx);
+    mtx_lock(&ctx->init_mtx);
+    while (ctx->plugin_state == gcmzdrops_plugin_state_initializing) {
+      cnd_wait(&ctx->init_cond, &ctx->init_mtx);
     }
-    enum gcmzdrops_plugin_state const state = g_ctx->plugin_state;
-    mtx_unlock(&g_ctx->init_mtx);
+    enum gcmzdrops_plugin_state const state = ctx->plugin_state;
+    mtx_unlock(&ctx->init_mtx);
 
     if (state != gcmzdrops_plugin_state_registered) {
       goto cleanup;
     }
 
     // Wait until AviUtl ready
-    if (!g_ctx->unknown_binary) {
+    if (!ctx->unknown_binary) {
       while (!gcmz_aviutl2_internal_object_ptr_is_valid()) {
         Sleep(50);
       }
     }
 
     bool external_api_enabled = false;
-    if (!gcmz_config_get_external_api(g_ctx->config, &external_api_enabled, &err)) {
+    if (!gcmz_config_get_external_api(ctx->config, &external_api_enabled, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to get external API setting"));
       goto cleanup;
@@ -2151,7 +2218,7 @@ static void delayed_initialization(void *userdata) {
       goto cleanup;
     }
 
-    if (!create_external_api(false, &err)) {
+    if (!create_external_api(ctx, false, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to initialize external API, continuing without it."));
       goto cleanup;
@@ -2170,7 +2237,7 @@ cleanup:
   if (elapsed < delayed_window_registration_ms) {
     Sleep(delayed_window_registration_ms - elapsed);
   }
-  gcmz_do(on_change_activate, NULL);
+  gcmz_do(on_change_activate, ctx);
 }
 
 // =============================================================================
@@ -2211,39 +2278,35 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
     c->lua_ctx = lua_ctx;
     c->aviutl2_version = version;
 
-    *ctx = c;
-    g_ctx = c;
-    c = NULL;
-
     // Initialize mutex and condition variable
-    if (mtx_init(&g_ctx->init_mtx, mtx_plain) != thrd_success) {
+    if (mtx_init(&c->init_mtx, mtx_plain) != thrd_success) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
       goto cleanup;
     }
-    if (cnd_init(&g_ctx->init_cond) != thrd_success) {
-      mtx_destroy(&g_ctx->init_mtx);
+    if (cnd_init(&c->init_cond) != thrd_success) {
+      mtx_destroy(&c->init_mtx);
       OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
       goto cleanup;
     }
-    g_ctx->plugin_state = gcmzdrops_plugin_state_initializing;
+    c->plugin_state = gcmzdrops_plugin_state_initializing;
 
-    g_ctx->do_sub = gcmz_do_sub_create(err);
-    if (!g_ctx->do_sub) {
+    c->do_sub = gcmz_do_sub_create(err);
+    if (!c->do_sub) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
-    gcmz_do_sub_do(g_ctx->do_sub, delayed_initialization, NULL);
+    gcmz_do_sub_do(c->do_sub, delayed_initialization, c);
 
-    if (!g_ctx->mo) {
+    if (!c->mo) {
       HINSTANCE hinst = NULL;
       if (!ovl_os_get_hinstance_from_fnptr((void *)gcmzdrops_create, (void **)&hinst, err)) {
         OV_ERROR_ADD_TRACE(err);
         goto cleanup;
       }
-      g_ctx->mo = mo_parse_from_resource(hinst, err);
-      if (g_ctx->mo) {
-        mo_set_default(g_ctx->mo);
+      c->mo = mo_parse_from_resource(hinst, err);
+      if (c->mo) {
+        mo_set_default(c->mo);
       } else {
         gcmz_logf_warn(NULL, "%s", "%s", gettext("failed to load language resources, continuing without them."));
       }
@@ -2262,7 +2325,7 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
                      gcmz_aviutl2_get_detected_version());
       break;
     case gcmz_aviutl2_status_unknown_binary:
-      g_ctx->unknown_binary = true;
+      c->unknown_binary = true;
       gcmz_logf_warn(
           NULL, "%s", "%s", gettext("unknown AviUtl ExEdit2 version detected. some features will be disabled."));
       break;
@@ -2293,36 +2356,36 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
       goto cleanup;
     }
 
-    g_ctx->config = gcmz_config_create(
+    c->config = gcmz_config_create(
         &(struct gcmz_config_options){
             .project_path_provider = get_project_path,
-            .project_path_provider_userdata = NULL,
+            .project_path_provider_userdata = c,
         },
         err);
-    if (!g_ctx->config) {
+    if (!c->config) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
-    if (!gcmz_config_load(g_ctx->config, err)) {
+    if (!gcmz_config_load(c->config, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
-    if (!gcmz_analyze_create(&g_ctx->capture,
+    if (!gcmz_analyze_create(&c->capture,
                              &(struct gcmz_analyze_options){
                                  .capture = capture_window,
                                  .get_window_list = get_window_list,
                                  .get_style = get_style,
-                                 .userdata = NULL,
+                                 .userdata = c,
                              },
                              err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
-    g_ctx->window_list = gcmz_window_list_create(err);
-    if (!g_ctx->window_list) {
+    c->window_list = gcmz_window_list_create(err);
+    if (!c->window_list) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
@@ -2339,16 +2402,16 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
         .debug_print = lua_debug_print,
         .script_dir_provider = get_script_directory_utf8,
         .get_media_info = get_media_info_utf8,
-        .userdata = NULL,
-        .aviutl2_ver = g_ctx->aviutl2_version,
+        .userdata = c,
+        .aviutl2_ver = c->aviutl2_version,
         .gcmz_ver = GCMZ_VERSION_UINT32,
     });
 
-    if (!g_ctx->lua_ctx) {
+    if (!c->lua_ctx) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
       goto cleanup;
     }
-    if (!gcmz_lua_setup(g_ctx->lua_ctx,
+    if (!gcmz_lua_setup(c->lua_ctx,
                         &(struct gcmz_lua_options){
                             .script_dir = script_dir,
                             .api_register_callback = register_lua_api,
@@ -2360,20 +2423,20 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
       goto cleanup;
     }
 
-    g_ctx->drop = gcmz_drop_create(extract_from_dataobj,
-                                   schedule_cleanup,
-                                   copy_file,
-                                   NULL,           // callback_userdata
-                                   g_ctx->lua_ctx, // lua_context
-                                   err);
-    if (!g_ctx->drop) {
+    c->drop = gcmz_drop_create(extract_from_dataobj,
+                               schedule_cleanup,
+                               copy_file,
+                               c,          // callback_userdata
+                               c->lua_ctx, // lua_context
+                               err);
+    if (!c->drop) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
     // Initial window list update and drop registration
     // Use gcmz_do to ensure this runs on the window thread for proper subclass installation
-    gcmz_do(on_change_activate, NULL);
+    gcmz_do(on_change_activate, c);
 
     {
       HICON icon = load_icon(err);
@@ -2381,36 +2444,38 @@ bool gcmzdrops_create(struct gcmzdrops **const ctx,
         OV_ERROR_ADD_TRACE(err);
         goto cleanup;
       }
-      g_ctx->tray = gcmz_tray_create(icon, err);
-      if (!g_ctx->tray) {
+      c->tray = gcmz_tray_create(icon, err);
+      if (!c->tray) {
         OV_ERROR_ADD_TRACE(err);
         goto cleanup;
       }
     }
 
-    if (!gcmz_tray_add_menu_item(g_ctx->tray, tray_menu_debug_capture, NULL, err)) {
+    if (!gcmz_tray_add_menu_item(c->tray, tray_menu_debug_capture, c, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 
 #ifndef NDEBUG
-    if (!gcmz_tray_add_menu_item(g_ctx->tray, tray_menu_debug_output, NULL, err)) {
+    if (!gcmz_tray_add_menu_item(c->tray, tray_menu_debug_output, c, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-    if (!gcmz_tray_add_menu_item(g_ctx->tray, tray_menu_test_external_api, NULL, err)) {
+    if (!gcmz_tray_add_menu_item(c->tray, tray_menu_test_external_api, c, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-    if (!gcmz_tray_add_menu_item(g_ctx->tray, tray_menu_test_external_api_object, NULL, err)) {
+    if (!gcmz_tray_add_menu_item(c->tray, tray_menu_test_external_api_object, c, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
 #endif
 
-    update_tray_visibility();
+    update_tray_visibility(c);
   }
 
+  *ctx = c;
+  c = NULL;
   result = true;
 
 cleanup:
@@ -2418,11 +2483,11 @@ cleanup:
     OV_ARRAY_DESTROY(&script_dir);
   }
   if (!result) {
-    if (g_ctx && g_ctx->do_sub) {
-      mtx_lock(&g_ctx->init_mtx);
-      g_ctx->plugin_state = gcmzdrops_plugin_state_failed;
-      cnd_signal(&g_ctx->init_cond);
-      mtx_unlock(&g_ctx->init_mtx);
+    if (c && c->do_sub) {
+      mtx_lock(&c->init_mtx);
+      c->plugin_state = gcmzdrops_plugin_state_failed;
+      cnd_signal(&c->init_cond);
+      mtx_unlock(&c->init_mtx);
     }
 
     wchar_t title[128];
@@ -2440,31 +2505,38 @@ cleanup:
                       L"%s",
                       gettext("The plugin could not start correctly.\nGCMZDrops is unavailable at the moment."));
     gcmz_error_dialog(NULL, err, title, main_instruction, content, TD_ERROR_ICON, TDCBF_OK_BUTTON);
-    finalize(NULL);
-  }
-  if (c) {
-    OV_FREE(&c);
+    gcmzdrops_destroy(&c);
   }
   return result;
 }
 
-static void project_load_handler(struct aviutl2_project_file *project) {
+void gcmzdrops_destroy(struct gcmzdrops **const ctx) {
+  if (!ctx || !*ctx) {
+    return;
+  }
+  finalize(*ctx);
+  OV_FREE(ctx);
+}
+
+void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, wchar_t const *const project_path) {
+  if (!ctx) {
+    return;
+  }
   struct ov_error err = {0};
   bool success = false;
-  wchar_t const *project_path = project->get_project_file_path();
   size_t const path_len = project_path ? wcslen(project_path) : 0;
   if (!path_len) {
-    if (g_ctx->project_path) {
-      g_ctx->project_path[0] = L'\0';
+    if (ctx->project_path) {
+      ctx->project_path[0] = L'\0';
     }
   } else {
-    if (!OV_ARRAY_GROW(&g_ctx->project_path, path_len + 1)) {
+    if (!OV_ARRAY_GROW(&ctx->project_path, path_len + 1)) {
       OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
       goto cleanup;
     }
-    wcscpy(g_ctx->project_path, project_path);
+    wcscpy(ctx->project_path, project_path);
   }
-  gcmz_do_sub_do(g_ctx->do_sub, update_api_project_data, NULL);
+  gcmz_do_sub_do(ctx->do_sub, update_api_project_data, ctx);
   success = true;
 cleanup:
   if (!success) {
@@ -2474,7 +2546,10 @@ cleanup:
 }
 
 static void paste_from_clipboard_impl(void *userdata) {
-  (void)userdata;
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    return;
+  }
   struct ov_error err = {0};
   IDataObject *dataobj = NULL;
   bool success = false;
@@ -2483,7 +2558,7 @@ static void paste_from_clipboard_impl(void *userdata) {
     void *window = NULL;
     int x = 0;
     int y = 0;
-    if (!gcmz_drop_get_right_click_position(g_ctx->drop, &window, &x, &y, &err)) {
+    if (!gcmz_drop_get_right_click_position(ctx->drop, &window, &x, &y, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
@@ -2496,7 +2571,7 @@ static void paste_from_clipboard_impl(void *userdata) {
       OV_ERROR_SET(&err, ov_error_type_generic, ov_error_generic_fail, "no data in clipboard");
       goto cleanup;
     }
-    if (!gcmz_drop_simulate_drop(g_ctx->drop, window, dataobj, x, y, false, false, &err)) {
+    if (!gcmz_drop_simulate_drop(ctx->drop, window, dataobj, x, y, false, false, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
@@ -2514,33 +2589,17 @@ cleanup:
   }
 }
 
-static void paste_from_clipboard_handler(struct aviutl2_edit_section *edit) {
-  (void)edit;
-  gcmz_do_sub_do(g_ctx->do_sub, paste_from_clipboard_impl, NULL);
+void gcmzdrops_paste_from_clipboard(struct gcmzdrops *const ctx) {
+  if (!ctx) {
+    return;
+  }
+  gcmz_do_sub_do(ctx->do_sub, paste_from_clipboard_impl, ctx);
 }
 
 void gcmzdrops_register(struct gcmzdrops *const ctx, struct aviutl2_host_app_table *const host) {
   if (!ctx || !host) {
     return;
   }
-
-  host->register_project_load_handler(project_load_handler);
-
-  static wchar_t layer_menu_name[64];
-  ov_snprintf_wchar(layer_menu_name,
-                    sizeof(layer_menu_name) / sizeof(layer_menu_name[0]),
-                    L"%s",
-                    L"%s",
-                    gettext("[GCMZDrops] Paste from Clipboard"));
-  host->register_layer_menu(layer_menu_name, paste_from_clipboard_handler);
-
-  static wchar_t config_menu_name[64];
-  ov_snprintf_wchar(config_menu_name,
-                    sizeof(config_menu_name) / sizeof(config_menu_name[0]),
-                    L"%s",
-                    L"%s",
-                    gettext("GCMZDrops Settings..."));
-  host->register_config_menu(config_menu_name, config_menu_handler);
 
   struct aviutl2_edit_handle *const edit = host->create_edit_handle();
   if (edit) {

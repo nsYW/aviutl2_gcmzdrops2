@@ -89,9 +89,23 @@ cleanup:
 
 void __declspec(dllexport) UninitializePlugin(void);
 void __declspec(dllexport) UninitializePlugin(void) {
+  gcmzdrops_destroy(&g_gcmzdrops);
   if (g_lua) {
     gcmz_lua_destroy(&g_lua);
   }
+}
+
+static void config_menu_handler(HWND const hwnd, HINSTANCE const dll_hinst) {
+  gcmzdrops_show_config_dialog(g_gcmzdrops, hwnd, dll_hinst);
+}
+
+static void project_load_handler(struct aviutl2_project_file *project) {
+  gcmzdrops_on_project_load(g_gcmzdrops, project->get_project_file_path());
+}
+
+static void paste_from_clipboard_handler(struct aviutl2_edit_section *edit) {
+  (void)edit;
+  gcmzdrops_paste_from_clipboard(g_gcmzdrops);
 }
 
 void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host);
@@ -100,6 +114,24 @@ void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host) {
   ov_snprintf_wchar(
       information, sizeof(information) / sizeof(information[0]), L"%1$hs", L"GCMZDrops %1$s by oov", GCMZ_VERSION);
   host->set_plugin_information(information);
+
+  static wchar_t layer_menu_name[64];
+  ov_snprintf_wchar(layer_menu_name,
+                    sizeof(layer_menu_name) / sizeof(layer_menu_name[0]),
+                    L"%s",
+                    L"%s",
+                    gettext("[GCMZDrops] Paste from Clipboard"));
+  host->register_layer_menu(layer_menu_name, paste_from_clipboard_handler);
+
+  static wchar_t config_menu_name[64];
+  ov_snprintf_wchar(config_menu_name,
+                    sizeof(config_menu_name) / sizeof(config_menu_name[0]),
+                    L"%s",
+                    L"%s",
+                    gettext("GCMZDrops Settings..."));
+  host->register_config_menu(config_menu_name, config_menu_handler);
+
+  host->register_project_load_handler(project_load_handler);
 
   gcmzdrops_register(g_gcmzdrops, host);
 }
