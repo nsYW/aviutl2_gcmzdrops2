@@ -2233,10 +2233,6 @@ cleanup:
   gcmz_do(on_change_activate, ctx);
 }
 
-// =============================================================================
-// Public API functions (called from dllmain.c)
-// =============================================================================
-
 bool gcmzdrops_create(struct gcmzdrops **const ctx,
                       struct gcmz_lua_context *const lua_ctx,
                       uint32_t const version,

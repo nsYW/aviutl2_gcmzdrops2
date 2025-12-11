@@ -319,10 +319,6 @@ cleanup:
   return result;
 }
 
-// ============================================================================
-// UTF-8 aware file loading functions for Lua
-// ============================================================================
-
 /**
  * @brief Check if file exists using wchar_t path
  */
@@ -874,10 +870,6 @@ cleanup:
   }
   return result < 0 ? gcmz_luafn_err(L, &err) : result;
 }
-
-// ============================================================================
-// UTF-8 aware io library functions
-// ============================================================================
 
 /**
  * @brief Registry key for file handle metatable
@@ -1913,10 +1905,6 @@ static void setup_io_file_metatable(lua_State *L) {
   lua_pop(L, 1);
 }
 
-// ============================================================================
-// UTF-8 aware io.popen and io.tmpfile
-// ============================================================================
-
 /**
  * @brief io.type(obj) - UTF-8 aware version
  *
@@ -2088,10 +2076,6 @@ static int io_tmpfile_utf8(lua_State *L) {
   create_file_handle(L, h, true, true, true);
   return 1;
 }
-
-// ============================================================================
-// UTF-8 aware os library functions
-// ============================================================================
 
 /**
  * @brief os.execute([command]) - UTF-8 aware version

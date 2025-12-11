@@ -537,7 +537,6 @@ static bool detect_cursor_position(uint8_t const *const bitmap_data,
  * Analyze instance structure
  *
  * Multi-window Detection Mechanism:
- * =================================
  * Recent AviUtl2 updates resulted in multiple aviutl2Manager windows,
  * with the layer window potentially in any one of them.
  * This structure implements an automatic detection mechanism
