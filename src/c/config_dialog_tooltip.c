@@ -9,6 +9,7 @@
 #include <ovbase.h>
 
 #include "config.h"
+#include "logf.h"
 
 static wchar_t const g_property_name[] = L"GCMZDropsTooltip";
 
@@ -248,7 +249,9 @@ static void CALLBACK refresh_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD 
       if (ctrl == state->listbox && item != LB_ERR) {
         struct ov_error err = {0};
         has_text = get_listbox_item_text(ctrl, item, text, tooltip_text_buffer_size, &err);
-        OV_ERROR_DESTROY(&err);
+        if (!has_text) {
+          OV_ERROR_DESTROY(&err);
+        }
       } else if (ctrl == state->edit_control) {
         int const text_len = GetWindowTextLengthW(ctrl);
         if (text_len > 0 && text_len < tooltip_text_buffer_size) {
