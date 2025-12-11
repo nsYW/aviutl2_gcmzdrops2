@@ -422,6 +422,7 @@ static NODISCARD bool parse_v0_request(wchar_t const *data,
 
   params->layer = 0;
   params->frame_advance = 0;
+  params->margin = -1;
   params->err = NULL;
   params->userdata = NULL;
 
@@ -504,10 +505,11 @@ cleanup:
   return result;
 }
 
-static NODISCARD bool parse_v1_request(char const *json_data,
-                                       size_t json_size,
-                                       struct gcmz_api_request_params *params,
-                                       struct ov_error *const err) {
+static NODISCARD bool parse_v1v2_request(enum external_api_format_version format_version,
+                                         char const *json_data,
+                                         size_t json_size,
+                                         struct gcmz_api_request_params *params,
+                                         struct ov_error *const err) {
   if (!json_data || json_size == 0 || !params) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
@@ -518,6 +520,7 @@ static NODISCARD bool parse_v1_request(char const *json_data,
 
   params->layer = 0;
   params->frame_advance = 0;
+  params->margin = -1;
   params->err = NULL;
   params->userdata = NULL;
 
@@ -550,6 +553,17 @@ static NODISCARD bool parse_v1_request(char const *json_data,
         goto cleanup;
       }
       params->frame_advance = (int)yyjson_get_int(frame_advance_val);
+    }
+
+    if (format_version == external_api_format_v2) {
+      yyjson_val *margin_val = yyjson_obj_get(root, "margin");
+      if (margin_val) {
+        if (!yyjson_is_int(margin_val)) {
+          OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "margin parameter must be an integer");
+          goto cleanup;
+        }
+        params->margin = (int)yyjson_get_int(margin_val);
+      }
     }
 
     yyjson_val *files_val = yyjson_obj_get(root, "files");
@@ -728,14 +742,14 @@ static NODISCARD LRESULT handle_wm_copydata(struct gcmz_api *const api, HWND con
     ctx->params.use_exo_converter = true; // Legacy format: EXO conversion enabled
     break;
   case external_api_format_v1: // JSON format with EXO conversion
-    if (!parse_v1_request((char const *)cds->lpData, cds->cbData, &ctx->params, &err)) {
+    if (!parse_v1v2_request(external_api_format_v1, (char const *)cds->lpData, cds->cbData, &ctx->params, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }
     ctx->params.use_exo_converter = true; // JSON format: EXO conversion enabled
     break;
   case external_api_format_v2: // JSON format without EXO conversion, accept layer == 0
-    if (!parse_v1_request((char const *)cds->lpData, cds->cbData, &ctx->params, &err)) {
+    if (!parse_v1v2_request(external_api_format_v2, (char const *)cds->lpData, cds->cbData, &ctx->params, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }

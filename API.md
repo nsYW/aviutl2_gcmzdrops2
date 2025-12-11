@@ -85,7 +85,7 @@ struct GCMZDropsData {
 | 0 | AviUtl 1.00/1.10 + ExEdit 0.92 + GCMZDrops v0.3 〜 v0.3.11 | `GCMZAPIVer` フィールドが存在しないため検出不可、非推奨 |
 | 1 | AviUtl 1.00/1.10 + ExEdit 0.92 + GCMZDrops v0.3.12 〜 v0.3.22 | `GCMZAPIVer` と `ProjectPath` フィールドを追加 |
 | 2 | AviUtl 1.00/1.10 + ExEdit 0.92 + GCMZDrops v0.3.23 以降 | `Flags` フィールドを追加（翻訳パッチ検出用） |
-| 3 | AviUtl ExEdit2 + GCMZDrops v2.0 以降 | `AviUtl2Ver` と `GCMZVer` フィールドを追加、`Layer = 0` を選択中のレイヤーとして扱うように変更、`*.exo` の簡易的な自動変換を実装 |
+| 3 | AviUtl ExEdit2 + GCMZDrops v2.0 以降 | `AviUtl2Ver` と `GCMZVer` フィールドを追加、ファイルドロップ API の dwData = 2 に対応 |
 
 ### Flags フィールド
 
@@ -120,7 +120,7 @@ SendMessage(window, WM_COPYDATA, (WPARAM)sender_window, (LPARAM)&cds);
 |---|-------------|------|
 | 0 | レガシー（wchar_t） | 非推奨。後方互換性のためのみ |
 | 1 | JSON（UTF-8） | AviUtl ExEdit2 では `*.exo` を自動変換を試みる |
-| 2 | JSON（UTF-8） | `*.exo` 自動変換なし、`layer = 0` で選択中のレイヤー指定が可能 |
+| 2 | JSON（UTF-8） | `*.exo` 自動変換なし、`layer = 0` で選択中のレイヤー指定が可能、`margin` パラメーターが使用可能 |
 
 AviUtl ExEdit2 では `*.exo` ファイルがサポートされていません。  
 `dwData = 0` か `dwData = 1` を使用すると GCMZDrops が `*.exo` ファイルを新形式に自動変換しますが、これは簡易的なもので多くの場合に対応できません。  
@@ -134,6 +134,7 @@ AviUtl ExEdit2 では `*.exo` ファイルがサポートされていません�
 {
   "layer": 1,
   "frameAdvance": 100,
+  "margin": 10,
   "files": [
     "C:\\Path\\To\\File1.png",
     "C:\\Path\\To\\File2.wav"
@@ -147,6 +148,7 @@ AviUtl ExEdit2 では `*.exo` ファイルがサポートされていません�
 |-----------|---|-----|------|
 | `layer` | integer | いいえ | ドロップ先のレイヤー番号。マイナスのときは現在の表示位置からの想定指定、プラスのときはそのレイヤー番号、`0` の場合は選択中のレイヤー(dwData = 2 のみ) |
 | `frameAdvance` | integer | いいえ | カーソル位置からのフレームオフセット。省略時は `0`（現在のカーソル位置） |
+| `margin` | integer | いいえ | 挿入先にオブジェクトが存在する場合の処理方法（dwData = 2 のみ）。`-1`（省略時のデフォルト）：諦める、`0` 以上：後ろに指定したフレーム数分の隙間を空けて挿入 |
 | `files` | array | はい | ドロップするファイルのフルパス（UTF-8）の配列。空配列は不可 |
 
 ---
@@ -247,6 +249,7 @@ int main(int argc, char *argv[]) {
     char json[] = "{"
       "\"layer\":0,"       // 0 = 選択中のレイヤー
       "\"frameAdvance\":0,"
+      "\"margin\":10,"      // オブジェクトがある場合、後ろに10フレーム空けて挿入
       "\"files\":[\"C:\\\\test\\\\image.png\"]"
     "}";
     SendMessage(
@@ -288,7 +291,11 @@ Cleanup:
   タイムラインウィンドウが表示されていないと、アイテムの挿入位置を判定できずに API の実行に失敗することがあります。
 
 - **挿入位置について**  
-  挿入先に既にオブジェクトがある場合など、十分なスペースがない場合は想定した場所に挿入されません。
+  挿入先に既にオブジェクトがある場合、`margin` パラメーター（`dwData = 2` のみ）で動作を制御できます：
+  - `margin` が `-1`（省略時のデフォルト）の場合：挿入を諦め、想定した場所には配置されません
+  - `margin` が `0` 以上の場合：既存のオブジェクトを後ろに押しやり、指定したフレーム数分の隙間を空けて挿入します
+  
+  `dwData = 0` または `dwData = 1` を使用する場合、`margin` パラメーターは使用できず、常に `-1` の動作（挿入を諦める）となります。
 
 - **複数ファイルのドロップについて**  
   十分なスペースがない場合は一部のファイルだけがずれた位置に配置されることがあります。
@@ -312,6 +319,7 @@ Cleanup:
 - `aviutl2_ver` および `gcmz_ver` フィールドを追加
 - `*.exo` ファイルの自動変換機能を追加（`dwData = 0` または `dwData = 1` の使用時のみ）
 - `dwData = 2` のときに `layer = 0` で選択中のレイヤーを指定可能に変更
+- `margin` パラメーターを追加（`dwData = 2` のみ）：挿入先にオブジェクトが存在する場合の処理方法を指定可能に
 
 ### API バージョン 2（GCMZDrops v0.3.23）
 

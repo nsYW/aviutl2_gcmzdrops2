@@ -478,9 +478,85 @@ struct external_api_drop_context {
   struct gcmzdrops *ctx;                           ///< Parent context
   int layer;                                       ///< Target layer (1-based)
   int frame_advance;                               ///< Frame advance after drop
+  int margin;                                      ///< Margin parameter for collision handling (-1 = disabled)
   gcmz_api_request_complete_func request_complete; ///< Callback to signal request completion
   struct gcmz_api_request_params *request_params;  ///< Original request params for completion callback
 };
+
+/**
+ * @brief Context for checking object collision at insertion position
+ */
+struct check_collision_context {
+  int layer;             ///< Target layer (0-based)
+  int frame;             ///< Target frame position
+  int margin;            ///< Margin frames to add after existing object
+  int adjusted_frame;    ///< Output: adjusted frame position
+  bool collision;        ///< Output: true if collision detected
+  bool collision_solved; ///< Output: true if collision was solved by adjusting frame
+};
+
+/**
+ * @brief Edit section callback for checking object collision
+ *
+ * Uses find_object to check if an object exists at the target layer/frame.
+ * If collision is found and margin >= 0, adjusts the frame position to
+ * after the existing object plus margin frames.
+ */
+static void check_collision_edit_section(void *param, struct aviutl2_edit_section *edit) {
+  struct check_collision_context *const ccc = (struct check_collision_context *)param;
+  if (!ccc || !edit || !edit->find_object || !edit->get_object_layer_frame) {
+    return;
+  }
+
+  ccc->adjusted_frame = ccc->frame;
+  ccc->collision = false;
+  ccc->collision_solved = false;
+
+  // Find object at or after the target frame on the target layer
+  aviutl2_object_handle obj = edit->find_object(ccc->layer, ccc->frame);
+  if (!obj) {
+    // No object found at or after target frame - no collision
+    gcmz_logf_verbose(
+        NULL, "%1$d%2$d", "no object found at layer %1$d frame %2$d, no collision", ccc->layer, ccc->frame);
+    return;
+  }
+
+  // Get the object's layer and frame information
+  struct aviutl2_object_layer_frame olf = edit->get_object_layer_frame(obj);
+  gcmz_logf_verbose(NULL,
+                    "%1$d%2$d%3$d%4$d",
+                    "found object at layer %1$d frame %2$d (start: %3$d, end: %4$d)",
+                    ccc->layer,
+                    ccc->frame,
+                    olf.start,
+                    olf.end);
+
+  // Check if the found object overlaps with our insertion frame
+  // find_object returns an object at frame or later, so we need to check
+  // if the insertion frame falls within [start, end] of the found object
+  if (ccc->frame >= olf.start && ccc->frame <= olf.end) {
+    // Collision detected
+    ccc->collision = true;
+
+    if (ccc->margin >= 0) {
+      // Try to adjust frame position to after the object plus margin
+      int const new_frame = olf.end + 1 + ccc->margin;
+      ccc->adjusted_frame = new_frame;
+
+      // Check if the new position also has a collision
+      aviutl2_object_handle next_obj = edit->find_object(ccc->layer, new_frame);
+      if (next_obj) {
+        struct aviutl2_object_layer_frame next_olf = edit->get_object_layer_frame(next_obj);
+        if (new_frame >= next_olf.start && new_frame <= next_olf.end) {
+          // Still collision after adjustment - cannot solve
+          ccc->collision_solved = false;
+          return;
+        }
+      }
+      ccc->collision_solved = true;
+    }
+  }
+}
 
 /**
  * @brief Completion callback for external API drop operations
@@ -496,6 +572,7 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const dcc,
   if (!dcc || !complete) {
     return;
   }
+  gcmz_logf_verbose(NULL, NULL, "on_drop_completion called");
 
   // userdata is only set for external API drops (heap-allocated, must be freed)
   struct external_api_drop_context *api_ctx = (struct external_api_drop_context *)userdata;
@@ -512,6 +589,47 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const dcc,
   bool execute_drop = true;
 
   {
+    // Check for collision at insertion position and adjust if needed
+    // This must be done before deciding the drop method
+    if (api_ctx->margin != -1 && api_ctx->layer >= 0 && ctx->edit && ctx->edit->call_edit_section_param) {
+      struct aviutl2_edit_info edit_info = {0};
+      ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
+
+      // Convert 1-based layer to 0-based for internal API
+      int const target_layer = (api_ctx->layer == 0) ? edit_info.layer : (api_ctx->layer - 1);
+
+      struct check_collision_context ccc = {
+          .layer = target_layer,
+          .frame = edit_info.frame,
+          .margin = api_ctx->margin,
+          .adjusted_frame = edit_info.frame,
+          .collision = false,
+          .collision_solved = false,
+      };
+
+      if (ctx->edit->call_edit_section_param(&ccc, check_collision_edit_section)) {
+        if (ccc.collision) {
+          if (!ccc.collision_solved) {
+            // Collision detected and cannot be solved - give up insertion
+            gcmz_logf_warn(&err,
+                           "%1$hs",
+                           "%1$hs",
+                           gettext("insertion position collision detected, cannot insert with specified margin"));
+            OV_ERROR_DESTROY(&err);
+            execute_drop = false;
+            goto cleanup;
+          }
+          // Move cursor to adjusted position
+          gcmz_logf_verbose(NULL,
+                            "%1$d%2$d",
+                            "collision detected, adjusting insertion frame from %1$d to %2$d",
+                            edit_info.frame,
+                            ccc.adjusted_frame);
+          set_cursor_frame_via_api(ctx, ccc.adjusted_frame);
+        }
+      }
+    }
+
     // Handle single .object files via official API
     // When api_ctx->layer is negative, it means relative positioning from the current scroll position.
     // To obtain that position, data retrieval in an environment where ctx->unknown_binary == false is required,
@@ -598,6 +716,7 @@ static void request_api(struct gcmz_api_request_params *const params, gcmz_api_r
         .ctx = ctx,
         .layer = params->layer,
         .frame_advance = params->frame_advance,
+        .margin = params->margin,
         .request_complete = complete,
         .request_params = params,
     };

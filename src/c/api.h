@@ -13,6 +13,7 @@ struct gcmz_api_request_params {
   struct gcmz_file_list *files;
   int layer;
   int frame_advance;
+  int margin; ///< Margin parameter for v2 format, -1 means disabled
   bool use_exo_converter;
   struct ov_error *err;
   void *userdata;
