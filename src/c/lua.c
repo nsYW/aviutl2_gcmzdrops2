@@ -450,9 +450,39 @@ static bool create_state_table(
 }
 
 /**
+ * @brief Case-insensitive wide character string comparison (ASCII only)
+ *
+ * @param s1 First string
+ * @param s2 Second string
+ * @return 0 if equal, -1 if s1 < s2, 1 if s1 > s2
+ */
+static int wcsicmp_ascii(wchar_t const *s1, wchar_t const *s2) {
+  if (!s1 || !s2) {
+    return s1 == s2 ? 0 : (s1 ? 1 : -1);
+  }
+  for (;;) {
+    wchar_t c1 = *s1++;
+    wchar_t c2 = *s2++;
+    if (c1 >= L'A' && c1 <= L'Z') {
+      c1 |= 0x20;
+    }
+    if (c2 >= L'A' && c2 <= L'Z') {
+      c2 |= 0x20;
+    }
+    if (c1 != c2) {
+      return c1 < c2 ? -1 : 1;
+    }
+    if (c1 == 0) {
+      return 0;
+    }
+  }
+}
+
+/**
  * @brief Setup plugin loading paths and load modules from script directory
  *
- * Collects .lua file paths and calls entrypoint.load_handlers to load them.
+ * Collects .lua file paths, directory/init.lua paths, and .dll paths,
+ * then calls entrypoint.load_handlers to load them.
  * Note: package.path and package.cpath should already be configured before calling this.
  *
  * @param ctx Lua context (must have entrypoint_ref set)
@@ -494,17 +524,15 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
     // Create table for file paths
     lua_newtable(L);
 
-    // Create search pattern: script_dir\*.lua
-    static wchar_t const pattern_suffix[] = L"\\*.lua";
-    static_assert(sizeof(pattern_suffix) / sizeof(wchar_t) <= MAX_PATH, "pattern_suffix is too large");
-
     // MAX_PATH is enough to avoid unnecessary reallocs
     if (!OV_ARRAY_GROW(&filepath, script_dir_len + MAX_PATH)) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
       goto cleanup;
     }
+
+    // Search for all files and directories: script_dir\*
     wcscpy(filepath, script_dir);
-    wcscpy(filepath + script_dir_len, pattern_suffix);
+    wcscpy(filepath + script_dir_len, L"\\*");
 
     WIN32_FIND_DATAW find_data;
     find_handle = FindFirstFileW(filepath, &find_data);
@@ -518,30 +546,62 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
       goto cleanup;
     }
 
+    static wchar_t const init_lua_suffix[] = L"\\init.lua";
+
     do {
-      if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      // Skip . and ..
+      if (wcscmp(find_data.cFileName, L".") == 0 || wcscmp(find_data.cFileName, L"..") == 0) {
         continue;
       }
 
-      // Build full filepath
-      size_t const filepath_len = script_dir_len + 1 + wcslen(find_data.cFileName) + 1;
-      if (!OV_ARRAY_GROW(&filepath, filepath_len)) {
-        OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
-        goto cleanup;
-      }
-      wcscpy(filepath, script_dir);
-      filepath[script_dir_len] = L'\\';
-      wcscpy(filepath + script_dir_len + 1, find_data.cFileName);
+      size_t const filename_len = wcslen(find_data.cFileName);
 
-      // Convert to UTF-8
-      if (!gcmz_wchar_to_utf8(filepath, &utf8_path, err)) {
-        OV_ERROR_ADD_TRACE(err);
-        goto cleanup;
-      }
+      if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        // For directories, check for init.lua
+        // Build: script_dir\dirname\init.lua
+        size_t const dir_path_len = script_dir_len + 1 + filename_len;
+        size_t const init_path_len = dir_path_len + sizeof(init_lua_suffix) / sizeof(wchar_t);
+        if (!OV_ARRAY_GROW(&filepath, init_path_len)) {
+          OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
+          goto cleanup;
+        }
+        wcscpy(filepath, script_dir);
+        filepath[script_dir_len] = L'\\';
+        wcscpy(filepath + script_dir_len + 1, find_data.cFileName);
+        wcscpy(filepath + dir_path_len, init_lua_suffix);
+        DWORD const attrs = GetFileAttributesW(filepath);
+        if ((attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+          if (!gcmz_wchar_to_utf8(filepath, &utf8_path, err)) {
+            OV_ERROR_ADD_TRACE(err);
+            goto cleanup;
+          }
+          lua_pushstring(L, utf8_path);
+          lua_rawseti(L, -2, ++file_count);
+        }
+      } else {
+        // For files, check for .lua or .dll extension
+        bool is_lua = (filename_len > 4 && wcsicmp_ascii(find_data.cFileName + filename_len - 4, L".lua") == 0);
+        bool is_dll = (filename_len > 4 && wcsicmp_ascii(find_data.cFileName + filename_len - 4, L".dll") == 0);
 
-      // Add to table
-      lua_pushstring(L, utf8_path);
-      lua_rawseti(L, -2, ++file_count);
+        if (!is_lua && !is_dll) {
+          continue;
+        }
+
+        // Extract module name (filename without extension)
+        size_t const modname_len = filename_len - 4; // Remove .lua or .dll
+        if (!OV_ARRAY_GROW(&filepath, modname_len + 1)) {
+          OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
+          goto cleanup;
+        }
+        wcsncpy(filepath, find_data.cFileName, modname_len);
+        filepath[modname_len] = L'\0';
+        if (!gcmz_wchar_to_utf8(filepath, &utf8_path, err)) {
+          OV_ERROR_ADD_TRACE(err);
+          goto cleanup;
+        }
+        lua_pushstring(L, utf8_path);
+        lua_rawseti(L, -2, ++file_count);
+      }
     } while (FindNextFileW(find_handle, &find_data));
 
     // Call load_handlers(filepaths)
@@ -654,7 +714,7 @@ NODISCARD bool gcmz_lua_setup(struct gcmz_lua_context *const ctx,
     lua_getfield(ctx->L, -1, "path");
     char const *const current_path = lua_tostring(ctx->L, -1);
     lua_pop(ctx->L, 1);
-    lua_pushfstring(ctx->L, "%s;%s\\?.lua", current_path ? current_path : "", utf8_dir);
+    lua_pushfstring(ctx->L, "%s;%s\\?.lua;%s\\?\\init.lua", current_path ? current_path : "", utf8_dir, utf8_dir);
     lua_setfield(ctx->L, -2, "path");
 
     lua_getfield(ctx->L, -1, "cpath");

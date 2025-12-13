@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.10)
 find_program(CLANG_FORMAT_EXE clang-format)
 file(GLOB_RECURSE C_SOURCES LIST_DIRECTORIES false CONFIGURE_DEPENDS "*.c" "*.h")
 list(FILTER C_SOURCES EXCLUDE REGEX "${CMAKE_CURRENT_SOURCE_DIR}/3rd")
-list(FILTER C_SOURCES EXCLUDE REGEX "test_🌙_module\\.(c|h)")
+list(FILTER C_SOURCES EXCLUDE REGEX "test_🌙_module\\.(c|h)") # clang-format does not support emoji filenames
 
 add_custom_target(${PROJECT_NAME}-format-c
   COMMAND ${CLANG_FORMAT_EXE} -style=file -i ${C_SOURCES}
@@ -336,14 +336,60 @@ set_target_properties(test_unicode PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_modules"
 )
 
-# Copy Unicode test Lua script to build directory
+# Copy Unicode test Lua script to build directory (with proper dependencies)
 add_custom_command(
-  TARGET test_unicode POST_BUILD
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_data/test_🌙.lua"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/test_data/test_🌙.lua"
     "${CMAKE_CURRENT_BINARY_DIR}/test_data/test_🌙.lua"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_data/test_🌙.lua"
   COMMENT "Copying Unicode test Lua script"
 )
+add_custom_target(unicode_test_script ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_data/test_🌙.lua")
+
+# Test plugin module (single .dll file style) for setup_plugin_loading verification
+add_library(test_plugin_cmodule SHARED test_data/lua_plugin/testmod.c)
+target_link_libraries(test_plugin_cmodule PRIVATE
+  gcmzdrops_intf
+  "${LUAJIT_DLL}"
+)
+set_target_properties(test_plugin_cmodule PROPERTIES
+  OUTPUT_NAME "testmod"
+  PREFIX ""
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin"
+)
+
+# Copy Lua plugin test scripts to build directory (with proper dependencies)
+set(LUA_PLUGIN_TEST_OUTPUTS
+  "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/testpkg.lua"
+  "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/testpkg2/init.lua"
+  "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/test_handler.lua"
+  "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/entrypoint.lua"
+)
+add_custom_command(
+  OUTPUT ${LUA_PLUGIN_TEST_OUTPUTS}
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/testpkg.lua"
+    "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/testpkg.lua"
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+    "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/testpkg2"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/testpkg2/init.lua"
+    "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/testpkg2/init.lua"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/test_handler.lua"
+    "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/test_handler.lua"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${LUA_SOURCE_DIR}/entrypoint.lua"
+    "${CMAKE_CURRENT_BINARY_DIR}/test_data/lua_plugin/entrypoint.lua"
+  DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/testpkg.lua"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/testpkg2/init.lua"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_data/lua_plugin/test_handler.lua"
+    "${LUA_SOURCE_DIR}/entrypoint.lua"
+  COMMENT "Copying Lua plugin test scripts and entrypoint"
+)
+add_custom_target(lua_plugin_test_scripts ALL DEPENDS ${LUA_PLUGIN_TEST_OUTPUTS})
 
 add_executable(test_lua lua_test.c file.c logf.c lua.c luautil.c)
 target_link_libraries(test_lua PRIVATE
@@ -355,8 +401,11 @@ target_link_libraries(test_lua PRIVATE
   comctl32
   shlwapi
 )
+target_compile_definitions(test_lua PRIVATE
+  BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+)
 add_test(NAME test_lua COMMAND test_lua)
-add_dependencies(test_lua test_cleanup test_unicode)
+add_dependencies(test_lua test_cleanup test_unicode test_plugin_cmodule lua_plugin_test_scripts)
 
 add_executable(test_luautil luautil_test.c luautil.c)
 target_link_libraries(test_luautil PRIVATE
