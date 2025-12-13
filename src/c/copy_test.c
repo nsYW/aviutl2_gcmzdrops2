@@ -109,10 +109,8 @@ cleanup:
 }
 
 static bool check_is_copy_needed(wchar_t const *path, enum gcmz_processing_mode mode, ov_tribool expected) {
-  struct ov_error err = {0};
-  ov_tribool result = is_copy_needed(path, mode, &err);
+  ov_tribool result = is_copy_needed(path, mode, NULL);
   if (result == ov_indeterminate) {
-    OV_ERROR_DESTROY(&err);
     return false;
   }
   return result == expected;

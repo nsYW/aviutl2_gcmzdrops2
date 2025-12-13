@@ -432,11 +432,9 @@ static struct gcmz_file_list *extract_and_convert_files(struct wrapped_drop_targ
 #if GCMZ_DEBUG
       gcmz_logf_verbose(NULL, NULL, "Invoking EXO file conversion via Lua");
 #endif
-      struct ov_error exo_err = {0};
-      if (!gcmz_lua_call_exo_convert(d->lua_context, file_list, &exo_err)) {
-        gcmz_logf_warn(
-            &exo_err, "%1$hs", "%1$hs", gettext("EXO file conversion failed, proceeding with original files"));
-        OV_ERROR_DESTROY(&exo_err);
+      if (!gcmz_lua_call_exo_convert(d->lua_context, file_list, err)) {
+        gcmz_logf_warn(err, "%1$hs", "%1$hs", gettext("EXO file conversion failed, proceeding with original files"));
+        OV_ERROR_DESTROY(err);
       }
     } else {
 #if GCMZ_DEBUG
@@ -796,13 +794,10 @@ static IDataObject *prepare_drag_enter_dataobj(struct wrapped_drop_target *const
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-    {
-      struct ov_error lua_err = {0};
-      if (!gcmz_lua_call_drag_enter(
-              d->lua_context, file_list, grfKeyState, capture_modifier_keys(), from_external_api, &lua_err)) {
-        gcmz_logf_warn(&lua_err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_enter");
-        OV_ERROR_DESTROY(&lua_err);
-      }
+    if (!gcmz_lua_call_drag_enter(
+            d->lua_context, file_list, grfKeyState, capture_modifier_keys(), from_external_api, err)) {
+      gcmz_logf_warn(err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_enter");
+      OV_ERROR_DESTROY(err);
     }
     replacement_dataobj = create_dataobj_with_placeholders(wdt, file_list, pt.x, pt.y, err);
     if (!replacement_dataobj) {
@@ -925,12 +920,9 @@ static bool prepare_drag_leave(struct wrapped_drop_target *const wdt, struct ov_
     return false;
   }
   struct gcmz_drop *const d = wdt->d;
-  {
-    struct ov_error lua_err = {0};
-    if (!gcmz_lua_call_drag_leave(d->lua_context, &lua_err)) {
-      gcmz_logf_warn(&lua_err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_leave");
-      OV_ERROR_DESTROY(&lua_err);
-    }
+  if (!gcmz_lua_call_drag_leave(d->lua_context, err)) {
+    gcmz_logf_warn(err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_leave");
+    OV_ERROR_DESTROY(err);
   }
   EnterCriticalSection(&wdt->cs);
   cleanup_current_entry(wdt);
@@ -1010,13 +1002,9 @@ static IDataObject *prepare_drop_dataobj(struct wrapped_drop_target *const wdt,
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-    {
-      struct ov_error lua_err = {0};
-      if (!gcmz_lua_call_drop(
-              d->lua_context, file_list, grfKeyState, capture_modifier_keys(), from_external_api, &lua_err)) {
-        gcmz_logf_warn(&lua_err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drop");
-        OV_ERROR_DESTROY(&lua_err);
-      }
+    if (!gcmz_lua_call_drop(d->lua_context, file_list, grfKeyState, capture_modifier_keys(), from_external_api, err)) {
+      gcmz_logf_warn(err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drop");
+      OV_ERROR_DESTROY(err);
     }
     if (d->file_manage_fn) {
       size_t const file_count = gcmz_file_list_count(file_list);
@@ -1720,11 +1708,9 @@ bool gcmz_drop_simulate_drop_external(struct gcmz_drop *const d,
 #if GCMZ_DEBUG
       gcmz_logf_verbose(NULL, NULL, "External API: Invoking EXO file conversion via Lua");
 #endif
-      struct ov_error exo_err = {0};
-      if (!gcmz_lua_call_exo_convert(d->lua_context, file_list, &exo_err)) {
-        gcmz_logf_warn(
-            &exo_err, "%1$hs", "%1$hs", gettext("EXO file conversion failed, proceeding with original files"));
-        OV_ERROR_DESTROY(&exo_err);
+      if (!gcmz_lua_call_exo_convert(d->lua_context, file_list, err)) {
+        gcmz_logf_warn(err, "%1$hs", "%1$hs", gettext("EXO file conversion failed, proceeding with original files"));
+        OV_ERROR_DESTROY(err);
       }
     }
 
@@ -1734,16 +1720,13 @@ bool gcmz_drop_simulate_drop_external(struct gcmz_drop *const d,
     }
 
     // Step 3: Call Lua handlers in sequence (Enter → Drop)
-    {
-      struct ov_error lua_err = {0};
-      if (!gcmz_lua_call_drag_enter(d->lua_context, file_list, 0, 0, true, &lua_err)) {
-        gcmz_logf_warn(&lua_err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_enter");
-        OV_ERROR_DESTROY(&lua_err);
-      }
-      if (!gcmz_lua_call_drop(d->lua_context, file_list, 0, 0, true, &lua_err)) {
-        gcmz_logf_warn(&lua_err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drop");
-        OV_ERROR_DESTROY(&lua_err);
-      }
+    if (!gcmz_lua_call_drag_enter(d->lua_context, file_list, 0, 0, true, err)) {
+      gcmz_logf_warn(err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drag_enter");
+      OV_ERROR_DESTROY(err);
+    }
+    if (!gcmz_lua_call_drop(d->lua_context, file_list, 0, 0, true, err)) {
+      gcmz_logf_warn(err, "%1$s", gettext("error occurred while executing %1$s script handler"), "drop");
+      OV_ERROR_DESTROY(err);
     }
 
     // Step 4: Apply file management (copying, etc.)

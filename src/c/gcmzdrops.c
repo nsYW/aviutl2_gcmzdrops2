@@ -611,11 +611,10 @@ static void on_drop_completion(struct gcmz_drop_complete_context *const dcc,
         if (ccc.collision) {
           if (!ccc.collision_solved) {
             // Collision detected and cannot be solved - give up insertion
-            gcmz_logf_warn(&err,
+            gcmz_logf_warn(NULL,
                            "%1$hs",
                            "%1$hs",
                            gettext("insertion position collision detected, cannot insert with specified margin"));
-            OV_ERROR_DESTROY(&err);
             execute_drop = false;
             goto cleanup;
           }
@@ -676,8 +675,7 @@ cleanup:
     set_cursor_frame_via_api(ctx, move_to);
     ctx->edit->get_edit_info(&edit_info, sizeof(edit_info));
     if (move_to != edit_info.frame) {
-      gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to move cursor after drop"));
-      OV_ERROR_DESTROY(&err);
+      gcmz_logf_warn(NULL, "%1$hs", "%1$hs", gettext("failed to move cursor after drop"));
     }
   }
 
@@ -2321,8 +2319,7 @@ static void delayed_initialization(void *userdata) {
 
     bool external_api_enabled = false;
     if (!gcmz_config_get_external_api(ctx->config, &external_api_enabled, &err)) {
-      OV_ERROR_ADD_TRACE(&err);
-      gcmz_logf_error(&err, "%1$hs", "%1$hs", gettext("failed to get external API setting"));
+      OV_ERROR_ADD_TRACEF(&err, "%1$hs", "%1$hs", gettext("failed to get external API setting"));
       goto cleanup;
     }
     if (!external_api_enabled) {
@@ -2331,8 +2328,7 @@ static void delayed_initialization(void *userdata) {
     }
 
     if (!create_external_api(ctx, false, &err)) {
-      OV_ERROR_ADD_TRACE(&err);
-      gcmz_logf_warn(&err, "%1$hs", "%1$hs", gettext("failed to initialize external API, continuing without it."));
+      OV_ERROR_ADD_TRACEF(&err, "%1$hs", "%1$hs", gettext("failed to initialize external API, continuing without it."));
       goto cleanup;
     }
   }
@@ -2340,6 +2336,7 @@ static void delayed_initialization(void *userdata) {
 
 cleanup:
   if (!success) {
+    gcmz_logf_error(&err, "%s", "%s", gettext("failed to complete delayed initialization"));
     OV_ERROR_DESTROY(&err);
   }
 

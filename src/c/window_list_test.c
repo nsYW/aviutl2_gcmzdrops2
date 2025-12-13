@@ -5,10 +5,8 @@
 
 static bool
 check_window_list_update(struct gcmz_window_list *wl, struct gcmz_window_info *windows, size_t count, ov_tribool want) {
-  struct ov_error err = {0};
-  ov_tribool got = gcmz_window_list_update(wl, windows, count, &err);
+  ov_tribool got = gcmz_window_list_update(wl, windows, count, NULL);
   if (got == ov_indeterminate) {
-    OV_ERROR_DESTROY(&err);
     return TEST_CHECK(got == want);
   }
   return TEST_CHECK(got == want);

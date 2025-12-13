@@ -49,9 +49,7 @@ int gcmz_luafn_err_(lua_State *const L, struct ov_error *const e, char const *co
     return lua_error(L);
   }
 
-  struct ov_error err = {0};
   char *error_msg = NULL;
-  bool failed = false;
 
   luaL_where(L, 1);
 
@@ -68,8 +66,7 @@ int gcmz_luafn_err_(lua_State *const L, struct ov_error *const e, char const *co
   lua_pushstring(L, "():\r\n");
 
   // Convert error to string
-  if (!error_to_string(e, &error_msg, &err)) {
-    failed = true;
+  if (!error_to_string(e, &error_msg, NULL)) {
     lua_pushstring(L, "failed to build error message");
   } else {
     lua_pushstring(L, error_msg);
@@ -79,9 +76,6 @@ int gcmz_luafn_err_(lua_State *const L, struct ov_error *const e, char const *co
 
   if (error_msg) {
     OV_ARRAY_DESTROY(&error_msg);
-  }
-  if (failed) {
-    OV_ERROR_DESTROY(&err);
   }
   OV_ERROR_DESTROY(e);
   return lua_error(L);
@@ -97,9 +91,7 @@ int gcmz_luafn_result_err_(lua_State *const L, struct ov_error *const e, char co
     return 2;
   }
 
-  struct ov_error err = {0};
   char *error_msg = NULL;
-  bool failed = false;
 
   // Build function name part
   static char const prefix[] = "gcmz_";
@@ -114,8 +106,7 @@ int gcmz_luafn_result_err_(lua_State *const L, struct ov_error *const e, char co
   lua_pushstring(L, "(): ");
 
   // Convert error to string
-  if (!error_to_string(e, &error_msg, &err)) {
-    failed = true;
+  if (!error_to_string(e, &error_msg, NULL)) {
     lua_pushstring(L, "failed to build error message");
   } else {
     lua_pushstring(L, error_msg);
@@ -125,9 +116,6 @@ int gcmz_luafn_result_err_(lua_State *const L, struct ov_error *const e, char co
 
   if (error_msg) {
     OV_ARRAY_DESTROY(&error_msg);
-  }
-  if (failed) {
-    OV_ERROR_DESTROY(&err);
   }
   OV_ERROR_DESTROY(e);
 
@@ -2296,12 +2284,8 @@ static int os_tmpname_utf8(lua_State *L) {
   // Delete the file since tmpname just returns a name
   DeleteFileW(temp_file);
 
-  // Convert to UTF-8
   char *utf8_path = NULL;
-  struct ov_error err = {0};
-
-  if (!gcmz_wchar_to_utf8(temp_file, &utf8_path, &err)) {
-    OV_ERROR_DESTROY(&err);
+  if (!gcmz_wchar_to_utf8(temp_file, &utf8_path, NULL)) {
     return luaL_error(L, "unable to convert filename to UTF-8");
   }
 

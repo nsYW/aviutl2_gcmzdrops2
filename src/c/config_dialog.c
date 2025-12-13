@@ -191,8 +191,7 @@ static HFONT create_dialog_font(HWND dialog, char const *font_list_utf8, struct 
       if (len > 0) {
         wchar_t font_name[LF_FACESIZE];
         if (ov_utf8_to_wchar(start, len, font_name, LF_FACESIZE, NULL) > 0) {
-          struct ov_error check_err = {0};
-          if (check_font_availability(font_name, &check_err)) {
+          if (check_font_availability(font_name, err)) {
             hfont = CreateFontW(font_height,
                                 0,
                                 0,
@@ -210,8 +209,9 @@ static HFONT create_dialog_font(HWND dialog, char const *font_list_utf8, struct 
             if (hfont) {
               goto cleanup;
             }
+            OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
           }
-          OV_ERROR_DESTROY(&check_err);
+          OV_ERROR_DESTROY(err);
         }
       }
 

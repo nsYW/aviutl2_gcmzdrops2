@@ -189,14 +189,12 @@ bool gcmz_temp_cleanup_stale_directories(gcmz_temp_cleanup_callback_fn callback,
       CloseHandle(hdir);
 
       // Proceed with deletion
-      struct ov_error temp_err = {0};
-      if (temp_remove_directory_by_process_id((DWORD)pid, &temp_err)) {
+      if (temp_remove_directory_by_process_id((DWORD)pid, err)) {
         if (callback) {
           callback(dir_path, userdata);
         }
       } else {
-        // Failed to remove - just ignore
-        OV_ERROR_DESTROY(&temp_err);
+        OV_ERROR_REPORT(err, gettext("failed to remove temporary directory"));
       }
     } while (FindNextFileW(h, &find_data));
   }

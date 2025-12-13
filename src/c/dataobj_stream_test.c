@@ -313,10 +313,8 @@ static struct mock_data_object *create_mock_dataobject(CLIPFORMAT format, DWORD 
     return mock;
   }
   if (tymed == TYMED_FILE) {
-    struct ov_error err = {0};
-    NATIVE_CHAR *path = create_test_file(L"test_mock_file.txt", data, &err);
+    NATIVE_CHAR *path = create_test_file(L"test_mock_file.txt", data, NULL);
     if (!path) {
-      OV_ERROR_DESTROY(&err);
       IDataObject_Release(&mock->iface);
       return NULL;
     }

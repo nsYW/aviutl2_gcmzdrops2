@@ -385,13 +385,12 @@ static size_t placeholder_callback(NATIVE_CHAR const *const var_name,
   static NATIVE_CHAR const bad_var[] = NSTR("***");
   static size_t const bad_var_len = sizeof(bad_var) / sizeof(NATIVE_CHAR) - 1;
 
-  struct ov_error err = {0};
   struct placeholder_callback_data *const data = (struct placeholder_callback_data *)userdata;
   int written = -1;
   if (var_name_len == project_dir_name_len && STRNCMP(var_name, project_dir_name, project_dir_name_len) == 0) {
-    written = placeholder_expand_projectdir(data->config, replacement_buf, &err);
+    written = placeholder_expand_projectdir(data->config, replacement_buf, NULL);
   } else if (var_name_len == shared_dir_name_len && STRNCMP(var_name, shared_dir_name, shared_dir_name_len) == 0) {
-    written = placeholder_expand_shareddir(replacement_buf, &err);
+    written = placeholder_expand_shareddir(replacement_buf, NULL);
   } else if (var_name_len == year_name_len && STRNCMP(var_name, year_name, year_name_len) == 0) {
     int const year = placeholder_callback_get_local_time(data)->wYear;
     written = ov_snprintf_wchar(replacement_buf, placeholder_buffer_size, ph04d, ph04d, year);
@@ -417,7 +416,6 @@ static size_t placeholder_callback(NATIVE_CHAR const *const var_name,
     return SIZE_MAX; // Unknown variable
   }
   if (written < 0) {
-    OV_ERROR_DESTROY(&err);
     memcpy(replacement_buf, bad_var, sizeof(bad_var));
     return bad_var_len;
   }
@@ -839,8 +837,7 @@ NATIVE_CHAR *gcmz_config_get_save_path(struct gcmz_config const *const config,
   // Try each save_path in order until one works
   for (size_t i = 0, n = OV_ARRAY_LENGTH(config->save_paths); i < n; ++i) {
     if (!try_save_path(
-            config, config->save_paths[i], filename, filename_len, config->allow_create_directories, &path, err)) {
-      OV_ERROR_DESTROY(err);
+            config, config->save_paths[i], filename, filename_len, config->allow_create_directories, &path, NULL)) {
       continue;
     }
     result = path;
