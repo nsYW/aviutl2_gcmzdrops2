@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Lua 環境の整備
+- 内部処理の整理
+
 ## 2.0.0alpha6 2025-12-08
 
 - AviUtl ExEdit2 version 2.0beta23a に対応
