@@ -225,7 +225,7 @@ int main(int argc, char *argv[]) {
     goto Cleanup;
   }
 
-  // バージョン確認
+  // APIバージョン情報を元に AviUtl ExEdit2 かどうかをチェック
   printf("GCMZAPIVer: %d\n", p->GCMZAPIVer);
   if (p->GCMZAPIVer != 3) {
     printf("AviUtl and GCMZDrops too old, please update.\n");
