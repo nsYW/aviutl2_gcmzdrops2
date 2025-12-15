@@ -151,27 +151,7 @@ static wchar_t const *get_extension_from_filename(wchar_t const *const filename)
   return dot ? dot : p;
 }
 
-static int wcsicmp_ascii(wchar_t const *s1, wchar_t const *s2) {
-  if (!s1 || !s2) {
-    return s1 == s2 ? 0 : (s1 ? 1 : -1);
-  }
-  for (;;) {
-    wchar_t c1 = *s1++;
-    wchar_t c2 = *s2++;
-    if (c1 >= L'A' && c1 <= L'Z') {
-      c1 |= 0x20;
-    }
-    if (c2 >= L'A' && c2 <= L'Z') {
-      c2 |= 0x20;
-    }
-    if (c1 != c2) {
-      return c1 < c2 ? -1 : 1;
-    }
-    if (c1 == 0) {
-      return 0;
-    }
-  }
-}
+#include "file_ext.h"
 
 static void uint32_to_hex8(uint32_t value, wchar_t *buf8) {
   static wchar_t const hex_chars[] = L"0123456789abcdef";
@@ -265,7 +245,7 @@ is_copy_needed(wchar_t const *const file_path, enum gcmz_processing_mode process
     wchar_t const *ext = get_extension_from_filename(filename);
     size_t const ignore_count = sizeof(ignore_extensions) / sizeof(ignore_extensions[0]);
     for (size_t i = 0; i < ignore_count; ++i) {
-      if (wcsicmp_ascii(ext, ignore_extensions[i]) == 0) {
+      if (gcmz_extension_equals(ext, ignore_extensions[i])) {
         return ov_false;
       }
     }

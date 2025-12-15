@@ -17,7 +17,6 @@ SKIP_TESTS=0
 CREATE_DOCS=0
 CREATE_ZIP=0
 CREATE_INSTALLER=0
-SIGN_INI=0
 CMAKE_BUILD_TYPE=Release
 ARCHS="x86_64"
 USE_ADDRESS_SANITIZER=OFF
@@ -46,10 +45,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     -i|--installer)
       CREATE_INSTALLER=1
-      shift
-      ;;
-    sign-ini)
-      SIGN_INI=1
       shift
       ;;
     --asan)
@@ -186,8 +181,8 @@ show_test_log() {
   fi
 }
 
-# Skip normal build process if only sign-ini or installer is requested
-if [ "${SIGN_INI}" -eq 0 ] && [ "${CREATE_INSTALLER}" -eq 0 ] || [ "${CREATE_ZIP}" -eq 1 ]; then
+# Skip normal build process if only installer is requested
+if [ "${CREATE_INSTALLER}" -eq 0 ] || [ "${CREATE_ZIP}" -eq 1 ]; then
   for arch in $ARCHS; do
     builddir="${PWD}/build/${CMAKE_BUILD_TYPE}/${arch}"
     build_log="${builddir}/build.log"
@@ -287,32 +282,6 @@ if [ "${CREATE_INSTALLER}" -eq 1 ]; then
     echo "Building installer with: ${ISCC_PATH}"
     "${ISCC_PATH}" "${installer_iss}"
   fi
-fi
-
-if [ "${SIGN_INI}" -eq 1 ]; then
-  if [ -z "${GCMZ_SECRET_KEY}" ]; then
-    echo "Error: GCMZ_SECRET_KEY environment variable is not set."
-    echo "Please set it in .env file or export it directly."
-    exit 1
-  fi
-
-  ini_signer_exe="${PWD}/build/${CMAKE_BUILD_TYPE}/x86_64/src/c/ini_signer.exe"
-  ini_file="${PWD}/src/c/aviutl2_addr.ini"
-
-  if [ ! -f "${ini_signer_exe}" ]; then
-    echo "Error: ini_signer.exe not found at ${ini_signer_exe}"
-    echo "Please run build first to create the executable."
-    exit 1
-  fi
-
-  if [ ! -f "${ini_file}" ]; then
-    echo "Error: aviutl2_addr.ini not found at ${ini_file}"
-    exit 1
-  fi
-
-  echo "Signing INI file: ${ini_file}"
-  echo "Using ini_signer: ${ini_signer_exe}"
-  "${ini_signer_exe}" sign "${ini_file}"
 fi
 
 echo "Build script completed."

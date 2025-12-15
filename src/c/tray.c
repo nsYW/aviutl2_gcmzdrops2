@@ -244,19 +244,19 @@ NODISCARD struct gcmz_tray *gcmz_tray_create(void *const icon, struct ov_error *
   // mtx_recursive is required to prevent deadlock when callback shows modal dialog
   // and user clicks tray menu again (same thread attempts to relock)
   if (mtx_init(&tray->mutex, mtx_recursive) != thrd_success) {
-    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, gettext("failed to initialize mutex"));
+    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to initialize mutex");
     goto cleanup;
   }
   mutex_initialized = true;
 
   if (cnd_init(&tray->cond) != thrd_success) {
-    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, gettext("failed to initialize condition variable"));
+    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to initialize condition variable");
     goto cleanup;
   }
   cond_initialized = true;
 
   if (thrd_create(&tray->thread, tray_thread_proc, tray) != thrd_success) {
-    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, gettext("failed to create thread"));
+    OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to create thread");
     goto cleanup;
   }
 

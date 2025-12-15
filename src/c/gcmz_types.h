@@ -4,11 +4,6 @@
 
 #include <string.h>
 
-enum {
-  gcmz_error_type = 1000,
-  gcmz_error_unknown_aviutl2_version = 1,
-};
-
 /**
  * @brief Additional modifier key flags
  *
@@ -92,40 +87,3 @@ static inline char const *gcmz_processing_mode_to_string(enum gcmz_processing_mo
   }
   return "auto";
 }
-
-/**
- * @brief Project data structure representing current AviUtl ExEdit2 project state
- */
-struct gcmz_project_data {
-  int width;             ///< Video width in pixels
-  int height;            ///< Video height in pixels
-  int video_rate;        ///< Video frame rate numerator (fps = video_rate / video_scale)
-  int video_scale;       ///< Video frame rate denominator
-  int sample_rate;       ///< Audio sample rate in Hz
-  int audio_ch;          ///< Number of audio channels
-  int cursor_frame;      ///< Current cursor frame position
-  int selected_layer;    ///< Currently selected layer
-  int display_frame;     ///< Currently displayed frame position
-  int display_layer;     ///< Currently displayed layer
-  int display_zoom;      ///< Current display zoom level
-  uint32_t flags;        ///< Flags
-  wchar_t *project_path; ///< Project file path (do not free)
-};
-
-/**
- * @brief Color definition
- */
-struct gcmz_color {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-};
-
-/**
- * @brief Window information structure
- */
-struct gcmz_window_info {
-  void *window;
-  int width;
-  int height;
-};

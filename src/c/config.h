@@ -22,7 +22,7 @@ typedef NATIVE_CHAR *(*gcmz_project_path_provider_fn)(void *userdata);
  */
 struct gcmz_config_options {
   gcmz_project_path_provider_fn project_path_provider;
-  void *project_path_provider_userdata;
+  void *userdata;
 };
 
 /**

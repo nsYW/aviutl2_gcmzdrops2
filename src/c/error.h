@@ -8,6 +8,13 @@
 #include <ovbase.h>
 
 /**
+ * @brief Set callback to get owner window for error dialogs
+ *
+ * @param callback Function that returns HWND for dialog owner, or NULL to clear
+ */
+void gcmz_error_set_owner_window_callback(HWND (*callback)(void));
+
+/**
  * @brief Display an error dialog with detailed error information
  *
  * @param owner Parent window handle (NULL for auto-detect)

@@ -10,6 +10,8 @@
 #include <ovnum.h>
 #include <ovthreads.h>
 
+#include <aviutl2_plugin2.h>
+
 #include "file.h"
 #include "gcmz_types.h"
 #include "json.h"
@@ -38,8 +40,6 @@ enum {
   max_files_per_request = 100,
   max_file_path_length = 1024,
   request_timeout_ms = 5000,
-  timer_interval_ms = 5000,
-  timer_id = 1,
 };
 
 enum external_api_format_version {
@@ -98,11 +98,7 @@ struct gcmz_api {
   enum state state;
 
   gcmz_api_request_func request;
-  gcmz_api_update_request_func update_request;
   void *userdata;
-
-  struct gcmz_project_data current_data;
-  bool has_current_data;
 
   uint32_t aviutl2_ver;
   uint32_t gcmz_ver;
@@ -124,100 +120,6 @@ static void gcmz_api_complete_callback(struct gcmz_api_request_params *const par
     gcmz_file_list_destroy(&ctx->files);
     OV_FREE(&ctx);
   }
-}
-
-static bool is_data_changed(struct gcmz_project_data const *const old_data,
-                            struct gcmz_project_data const *const new_data) {
-  if (!old_data || !new_data) {
-    return true;
-  }
-  if (old_data->width != new_data->width || old_data->height != new_data->height ||
-      old_data->video_rate != new_data->video_rate || old_data->video_scale != new_data->video_scale ||
-      old_data->sample_rate != new_data->sample_rate || old_data->audio_ch != new_data->audio_ch ||
-      old_data->cursor_frame != new_data->cursor_frame || old_data->display_frame != new_data->display_frame ||
-      old_data->display_layer != new_data->display_layer || old_data->display_zoom != new_data->display_zoom ||
-      old_data->flags != new_data->flags) {
-    return true;
-  }
-  if (old_data->project_path == NULL && new_data->project_path == NULL) {
-    return false;
-  }
-  if (old_data->project_path == NULL || new_data->project_path == NULL) {
-    return true;
-  }
-  return wcscmp(old_data->project_path, new_data->project_path) != 0;
-}
-
-static NODISCARD bool update_mapped_data(struct gcmz_api *const api, struct ov_error *const err) {
-  if (!api || !api->fmo || !api->mutex) {
-    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
-    return false;
-  }
-
-  struct gcmzdrops_fmo *shared_data = NULL;
-  bool mutex_acquired = false;
-  bool result = false;
-
-  {
-    DWORD const wait_result = WaitForSingleObject(api->mutex, request_timeout_ms);
-    if (wait_result != WAIT_OBJECT_0) {
-      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
-      goto cleanup;
-    }
-    mutex_acquired = true;
-  }
-
-  shared_data =
-      (struct gcmzdrops_fmo *)MapViewOfFile(api->fmo, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(struct gcmzdrops_fmo));
-  if (!shared_data) {
-    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
-    goto cleanup;
-  }
-
-  shared_data->window = (uint32_t)(uintptr_t)api->window;
-  shared_data->gcmz_api_ver = api_version;
-
-  if (!api->has_current_data) {
-    memset(shared_data, 0, sizeof(struct gcmzdrops_fmo));
-    shared_data->gcmz_api_ver = api_version;
-    shared_data->aviutl2_ver = api->aviutl2_ver;
-    shared_data->gcmz_ver = api->gcmz_ver;
-    goto cleanup;
-  }
-
-  shared_data->width = (int32_t)api->current_data.width;
-  shared_data->height = (int32_t)api->current_data.height;
-  shared_data->video_rate = api->current_data.video_rate;
-  shared_data->video_scale = api->current_data.video_scale;
-  shared_data->audio_rate = (int32_t)api->current_data.sample_rate;
-  shared_data->audio_ch = (int32_t)api->current_data.audio_ch;
-  shared_data->flags = api->current_data.flags;
-  shared_data->aviutl2_ver = api->aviutl2_ver;
-  shared_data->gcmz_ver = api->gcmz_ver;
-
-  if (!api->current_data.project_path) {
-    shared_data->project_path[0] = L'\0';
-    result = true;
-    goto cleanup;
-  }
-  {
-    size_t const path_len_orig = wcslen(api->current_data.project_path);
-    size_t const path_len = (path_len_orig >= MAX_PATH) ? MAX_PATH - 1 : path_len_orig;
-    wcsncpy(shared_data->project_path, api->current_data.project_path, path_len);
-    shared_data->project_path[path_len] = L'\0';
-  }
-
-  result = true;
-
-cleanup:
-  if (shared_data) {
-    UnmapViewOfFile(shared_data);
-    shared_data = NULL;
-  }
-  if (mutex_acquired) {
-    ReleaseMutex(api->mutex);
-  }
-  return result;
 }
 
 static bool is_safe_file_path(wchar_t const *const path) {
@@ -315,7 +217,7 @@ utf8_to_wstr(char const *const utf8_str, size_t const utf8_len, wchar_t **const 
       goto cleanup;
     }
     if (converted != ws_len) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "Failed to convert UTF-8 to wide character");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to convert UTF-8 to wide character");
       goto cleanup;
     }
 
@@ -484,7 +386,7 @@ static NODISCARD bool parse_v0_request(wchar_t const *data,
         file_path[path_len] = L'\0';
         if (!is_safe_file_path(file_path)) {
           OV_ARRAY_DESTROY(&file_path);
-          OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "Unsafe file path detected in version 0");
+          OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "unsafe file path detected in version 0");
           goto cleanup;
         }
         if (!gcmz_file_list_add(params->files, file_path, L"application/octet-stream", err)) {
@@ -527,7 +429,7 @@ static NODISCARD bool parse_v1v2_request(enum external_api_format_version format
   {
     doc = yyjson_read_opts((char *)ov_deconster_(json_data), json_size, 0, gcmz_json_get_alc(), NULL);
     if (!doc) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "Failed to parse JSON data");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "failed to parse JSON data");
       goto cleanup;
     }
 
@@ -644,19 +546,18 @@ static int api_thread(void *const userdata) {
     goto cleanup;
   }
 
-  window = CreateWindowExW(0,                       // Extended window style
-                           g_api_window_class_name, // Window class name
-                           L"GCMZDrops API Window", // Window name
-                           0,                       // Window style
+  window = CreateWindowExW(0,
+                           g_api_window_class_name,
+                           L"GCMZDrops API Window",
                            0,
                            0,
                            0,
-                           0,                      // Position and size (not used for message-only window)
-                           HWND_MESSAGE,           // Parent window (HWND_MESSAGE for message-only window)
-                           NULL,                   // Menu
-                           GetModuleHandleW(NULL), // Instance handle
-                           api                     // Creation parameter (passed to WM_CREATE)
-  );
+                           0,
+                           0,
+                           HWND_MESSAGE,
+                           NULL,
+                           GetModuleHandleW(NULL),
+                           api);
   if (!window) {
     OV_ERROR_SET_HRESULT(&err, HRESULT_FROM_WIN32(GetLastError()));
     goto cleanup;
@@ -668,12 +569,6 @@ static int api_thread(void *const userdata) {
   cnd_signal(&api->cond);
   mtx_unlock(&api->mtx);
 
-  if (api->update_request) {
-    if (SetTimer(window, timer_id, timer_interval_ms, NULL)) {
-      PostMessageW(window, WM_TIMER, timer_id, 0);
-    }
-  }
-
   MSG msg;
   while (GetMessageW(&msg, NULL, 0, 0) > 0) {
     TranslateMessage(&msg);
@@ -684,7 +579,6 @@ static int api_thread(void *const userdata) {
 
 cleanup:
   if (window) {
-    KillTimer(window, timer_id);
     DestroyWindow(window);
     mtx_lock(&api->mtx);
     api->window = NULL;
@@ -760,9 +654,8 @@ static NODISCARD LRESULT handle_wm_copydata(struct gcmz_api *const api, HWND con
     goto cleanup;
   }
 
-  // Validate the complete request
   if (!validate_request_limits((enum external_api_format_version)cds->dwData, &ctx->params)) {
-    OV_ERROR_SET(&err, ov_error_type_generic, ov_error_generic_fail, "Request validation failed");
+    OV_ERROR_SET(&err, ov_error_type_generic, ov_error_generic_fail, "request validation failed");
     goto cleanup;
   }
 
@@ -801,14 +694,6 @@ static LRESULT CALLBACK window_proc(HWND const hwnd, UINT const msg, WPARAM cons
   switch (msg) {
   case WM_COPYDATA:
     return handle_wm_copydata(api, hwnd, lparam);
-  case WM_TIMER:
-    if (wparam != timer_id || !api) {
-      return 0;
-    }
-    if (api->update_request) {
-      api->update_request(api, api->userdata);
-    }
-    return 0;
   case WM_COMPLETION_CALLBACK: {
     struct request_context *ctx = (struct request_context *)lparam;
     if (ctx) {
@@ -842,7 +727,6 @@ NODISCARD struct gcmz_api *gcmz_api_create(struct gcmz_api_options const *const 
 
   *a = (struct gcmz_api){
       .request = options ? options->request_callback : NULL,
-      .update_request = options ? options->update_callback : NULL,
       .userdata = options ? options->userdata : NULL,
       .state = state_allocated,
       .aviutl2_ver = options ? options->aviutl2_ver : 0,
@@ -950,16 +834,104 @@ void gcmz_api_destroy(struct gcmz_api **const api) {
     a->mutex = NULL;
   }
 
-  if (a->current_data.project_path) {
-    OV_ARRAY_DESTROY(&a->current_data.project_path);
-  }
   OV_FREE(api);
 }
 
+/**
+ * Updates the shared memory with the provided project data.
+ *
+ * @param api Pointer to the gcmz_api instance.
+ * @param edit_info Pointer to the aviutl2_edit_info structure containing project data. Can be NULL.
+ * @param project_path Wide character string representing the project file path. Can be NULL.
+ * @param err Pointer to an ov_error structure for error reporting.
+ * @return true on success, false on failure.
+ */
+static NODISCARD bool update_mapped_data(struct gcmz_api *const api,
+                                         struct aviutl2_edit_info const *const edit_info,
+                                         wchar_t const *const project_path,
+                                         struct ov_error *const err) {
+  if (!api) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+  if (!api->fmo || !api->mutex) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
+    return false;
+  }
+
+  struct gcmzdrops_fmo *shared_data = NULL;
+  bool mutex_acquired = false;
+  bool result = false;
+
+  {
+    DWORD const wait_result = WaitForSingleObject(api->mutex, request_timeout_ms);
+    if (wait_result != WAIT_OBJECT_0) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+    mutex_acquired = true;
+  }
+
+  shared_data =
+      (struct gcmzdrops_fmo *)MapViewOfFile(api->fmo, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(struct gcmzdrops_fmo));
+  if (!shared_data) {
+    OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+    goto cleanup;
+  }
+
+  shared_data->window = (uint32_t)(uintptr_t)api->window;
+  shared_data->gcmz_api_ver = api_version;
+  shared_data->aviutl2_ver = api->aviutl2_ver;
+  shared_data->gcmz_ver = api->gcmz_ver;
+
+  if (edit_info) {
+    shared_data->width = (int32_t)edit_info->width;
+    shared_data->height = (int32_t)edit_info->height;
+    shared_data->video_rate = (int32_t)edit_info->rate;
+    shared_data->video_scale = (int32_t)edit_info->scale;
+    shared_data->audio_rate = (int32_t)edit_info->sample_rate;
+  } else {
+    shared_data->width = 0;
+    shared_data->height = 0;
+    shared_data->video_rate = 0;
+    shared_data->video_scale = 0;
+    shared_data->audio_rate = 0;
+  }
+
+  // Does not provide audio channel info, assume stereo
+  shared_data->audio_ch = 2;
+  // No longer used, previously indicated which language patch was applied
+  shared_data->flags = 0;
+
+  shared_data->aviutl2_ver = api->aviutl2_ver;
+  shared_data->gcmz_ver = api->gcmz_ver;
+
+  if (project_path) {
+    size_t const path_len_orig = wcslen(project_path);
+    size_t const path_len = path_len_orig >= MAX_PATH ? MAX_PATH - 1 : path_len_orig;
+    memcpy(shared_data->project_path, project_path, path_len * sizeof(shared_data->project_path[0]));
+    memset(shared_data->project_path + path_len, 0, (MAX_PATH - path_len) * sizeof(shared_data->project_path[0]));
+  } else {
+    memset(shared_data->project_path, 0, sizeof(shared_data->project_path));
+  }
+  result = true;
+
+cleanup:
+  if (shared_data) {
+    UnmapViewOfFile(shared_data);
+    shared_data = NULL;
+  }
+  if (mutex_acquired) {
+    ReleaseMutex(api->mutex);
+  }
+  return result;
+}
+
 bool gcmz_api_set_project_data(struct gcmz_api *const api,
-                               struct gcmz_project_data const *const proj,
+                               struct aviutl2_edit_info const *const edit_info,
+                               wchar_t const *const project_path,
                                struct ov_error *const err) {
-  if (!api || !proj) {
+  if (!api) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
@@ -973,39 +945,7 @@ bool gcmz_api_set_project_data(struct gcmz_api *const api,
   }
   mutex_locked = true;
 
-  if (api->has_current_data && !is_data_changed(&api->current_data, proj)) {
-    result = true;
-    goto cleanup;
-  }
-
-  api->has_current_data = true;
-
-  api->current_data.width = proj->width;
-  api->current_data.height = proj->height;
-  api->current_data.video_rate = proj->video_rate;
-  api->current_data.video_scale = proj->video_scale;
-  api->current_data.sample_rate = proj->sample_rate;
-  api->current_data.audio_ch = proj->audio_ch;
-  api->current_data.cursor_frame = proj->cursor_frame;
-  api->current_data.display_frame = proj->display_frame;
-  api->current_data.display_layer = proj->display_layer;
-  api->current_data.display_zoom = proj->display_zoom;
-  api->current_data.flags = proj->flags;
-
-  if (proj->project_path) {
-    size_t path_len = wcslen(proj->project_path);
-    if (!OV_ARRAY_GROW(&api->current_data.project_path, path_len + 1)) {
-      OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
-      goto cleanup;
-    }
-    wcscpy(api->current_data.project_path, proj->project_path);
-  } else {
-    if (api->current_data.project_path) {
-      api->current_data.project_path[0] = L'\0';
-    }
-  }
-
-  if (!update_mapped_data(api, err)) {
+  if (!update_mapped_data(api, edit_info, project_path, err)) {
     OV_ERROR_ADD_TRACE(err);
     goto cleanup;
   }

@@ -501,8 +501,8 @@ debug_print(i18n({
 
 -- string.format と組み合わせた使用例
 debug_print(string.format(i18n({
-    ja_JP = [=[%s: 処理を続行します。]=],
-    en_US = [=[%s: Continue processing.]=],
+    ja_JP = [=[%s: 処理を続行します]=],
+    en_US = [=[%s: Continue processing]=],
     zh_CN = [=[%s: 继续处理]=],
   }),
   filename

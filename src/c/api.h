@@ -4,7 +4,7 @@
 
 struct gcmz_api;
 struct gcmz_file_list;
-struct gcmz_project_data;
+struct aviutl2_edit_info;
 
 /**
  * @brief Request parameters structure passed to callback
@@ -37,30 +37,16 @@ typedef void (*gcmz_api_request_func)(struct gcmz_api_request_params *const para
                                       gcmz_api_request_complete_func const complete);
 
 /**
- * @brief Callback function for project data update requests
- *
- * This callback is invoked periodically as a reminder to update project data.
- * When called, the callback should retrieve current AviUtl2 project information
- * and call gcmz_api_set_project_data() to provide the updated data.
- * This ensures the API has current project state for file drop operations.
- *
- * @param api API instance that needs updated project data
- * @param userdata User data provided during API creation
- */
-typedef void (*gcmz_api_update_request_func)(struct gcmz_api *const api, void *const userdata);
-
-/**
  * @brief Options structure for API initialization
  *
  * This structure contains optional callback functions and associated userdata
  * that can be set during API instance creation.
  */
 struct gcmz_api_options {
-  gcmz_api_request_func request_callback;       ///< File drop request handler callback
-  gcmz_api_update_request_func update_callback; ///< Project data update request callback
-  void *userdata;                               ///< Shared user data for both callbacks
-  uint32_t aviutl2_ver;                         ///< AviUtl2 version (from InitializePlugin or detected)
-  uint32_t gcmz_ver;                            ///< GCMZDrops version (from version.h)
+  gcmz_api_request_func request_callback; ///< File drop request handler callback
+  void *userdata;                         ///< Shared user data for both callbacks
+  uint32_t aviutl2_ver;                   ///< AviUtl2 version (from InitializePlugin or detected)
+  uint32_t gcmz_ver;                      ///< GCMZDrops version (from version.h)
 };
 
 /**
@@ -96,19 +82,13 @@ void gcmz_api_destroy(struct gcmz_api **const api);
 
 /**
  * @brief Set current AviUtl2 project data
- *
- * Updates the current project data for the API instance. This function should
- * be called in response to the notify_update callback to provide the latest
- * AviUtl2 project information.
- *
  * @param api Pointer to API instance. Must not be NULL.
- * @param proj Pointer to project data structure. Must not be NULL.
+ * @param edit_info Pointer to project information. Can be NULL.
+ * @param project_path Project file path. Can be NULL.
  * @param err Pointer to error structure for error information. Can be NULL.
  * @return true on success, false on failure (check err for error details)
- *
- * @note This function should be called from the notify_update callback or the
- *       main thread. It is not thread-safe for concurrent access.
  */
 NODISCARD bool gcmz_api_set_project_data(struct gcmz_api *const api,
-                                         struct gcmz_project_data const *const proj,
+                                         struct aviutl2_edit_info const *const edit_info,
+                                         wchar_t const *const project_path,
                                          struct ov_error *const err);

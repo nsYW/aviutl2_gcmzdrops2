@@ -6,7 +6,9 @@
 
 #include <ovl/os.h>
 
-#include "aviutl2.h"
+static HWND (*g_get_owner_window_callback)(void) = NULL;
+
+void gcmz_error_set_owner_window_callback(HWND (*callback)(void)) { g_get_owner_window_callback = callback; }
 
 static HANDLE create_activation_context_for_comctl32(void) {
   ACTCTXW actctx = {
@@ -27,12 +29,11 @@ static HANDLE create_activation_context_for_comctl32(void) {
  * @return HWND to use as owner window (never returns NULL)
  */
 static HWND get_owner_window(void) {
-  HWND wnd = gcmz_aviutl2_get_main_window();
-  if (wnd) {
-    return wnd;
-  }
-  if (gcmz_aviutl2_find_manager_windows((void **)&wnd, 1, NULL)) {
-    return wnd;
+  if (g_get_owner_window_callback) {
+    HWND wnd = g_get_owner_window_callback();
+    if (wnd) {
+      return wnd;
+    }
   }
   return GetDesktopWindow();
 }

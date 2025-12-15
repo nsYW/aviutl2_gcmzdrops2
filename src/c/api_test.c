@@ -6,8 +6,11 @@
 #include <string.h>
 
 #ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
 #endif
+
+#include <aviutl2_plugin2.h>
 
 #include "api.h"
 #include "file.h"
@@ -64,25 +67,6 @@ static void test_request_callback(struct gcmz_api_request_params *const params,
   }
 }
 
-// Test callback for project data update notification
-static void test_notify_update(struct gcmz_api *const api, void *const userdata) {
-  (void)userdata;
-  if (!api) {
-    return;
-  }
-  struct gcmz_project_data data = {
-      .width = 1920,
-      .height = 1080,
-      .video_rate = 30,
-      .video_scale = 1,
-      .sample_rate = 48000,
-      .audio_ch = 2,
-      .project_path = L"C:\\test\\project.aup",
-  };
-  struct ov_error err = {0};
-  TEST_SUCCEEDED(gcmz_api_set_project_data(api, &data, &err), &err);
-}
-
 // Check if GCMZDrops mutex already exists (indicates another instance is running)
 static bool gcmzdrops_mutex_exists(void) {
   HANDLE mutex = OpenMutexW(SYNCHRONIZE, FALSE, L"GCMZDropsMutex");
@@ -103,20 +87,14 @@ static bool gcmzdrops_mutex_exists(void) {
   } while (0)
 
 // Default project data for testing
-static struct gcmz_project_data const g_default_project_data = {
+static struct aviutl2_edit_info const g_default_edit_info = {
     .width = 1920,
     .height = 1080,
-    .video_rate = 30,
-    .video_scale = 1,
+    .rate = 30,
+    .scale = 1,
     .sample_rate = 48000,
-    .audio_ch = 2,
-    .cursor_frame = 0,
-    .display_frame = 0,
-    .display_layer = 1,
-    .display_zoom = 100,
-    .flags = 0,
-    .project_path = L"C:\\test\\project.aup",
 };
+static wchar_t const *const g_default_project_path = L"C:\\test\\project.aup";
 
 // Test API fixture for WM_COPYDATA tests
 struct test_api_fixture {
@@ -137,7 +115,6 @@ static bool test_api_fixture_init(struct test_api_fixture *const fixture, struct
   fixture->api = gcmz_api_create(
       &(struct gcmz_api_options){
           .request_callback = test_request_callback,
-          .update_callback = NULL,
           .userdata = &fixture->ctx,
       },
       err);
@@ -146,7 +123,7 @@ static bool test_api_fixture_init(struct test_api_fixture *const fixture, struct
     return false;
   }
 
-  if (!gcmz_api_set_project_data(fixture->api, &g_default_project_data, err)) {
+  if (!gcmz_api_set_project_data(fixture->api, &g_default_edit_info, g_default_project_path, err)) {
     OV_ERROR_ADD_TRACE(err);
     gcmz_api_destroy(&fixture->api);
     return false;
@@ -232,7 +209,6 @@ static void test_api_create_destroy(void) {
   api = gcmz_api_create(
       &(struct gcmz_api_options){
           .request_callback = NULL,
-          .update_callback = test_notify_update,
           .userdata = NULL,
       },
       &err);
@@ -263,7 +239,6 @@ static void test_api_callback_setting(void) {
   api = gcmz_api_create(
       &(struct gcmz_api_options){
           .request_callback = test_request_callback,
-          .update_callback = test_notify_update,
           .userdata = &ctx,
       },
       &err);
@@ -284,7 +259,6 @@ static void test_thread_management(void) {
   api = gcmz_api_create(
       &(struct gcmz_api_options){
           .request_callback = test_request_callback,
-          .update_callback = test_notify_update,
           .userdata = &ctx,
       },
       &err);
@@ -415,11 +389,7 @@ static void test_multiple_data_sets(void) {
   struct gcmz_api *api = NULL;
   struct ov_error err = {0};
 
-  api = gcmz_api_create(
-      &(struct gcmz_api_options){
-          .update_callback = test_notify_update,
-      },
-      &err);
+  api = gcmz_api_create(&(struct gcmz_api_options){.request_callback = NULL}, &err);
   if (!TEST_SUCCEEDED(api != NULL, &err)) {
     return;
   }
@@ -438,16 +408,14 @@ static void test_multiple_data_sets(void) {
   };
 
   for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); ++i) {
-    struct gcmz_project_data data = {
+    struct aviutl2_edit_info edit_info = {
         .width = test_cases[i].width,
         .height = test_cases[i].height,
-        .video_rate = 30,
-        .video_scale = 1,
+        .rate = 30,
+        .scale = 1,
         .sample_rate = 48000,
-        .audio_ch = 2,
-        .project_path = test_cases[i].path,
     };
-    TEST_SUCCEEDED(gcmz_api_set_project_data(api, &data, &err), &err);
+    TEST_SUCCEEDED(gcmz_api_set_project_data(api, &edit_info, test_cases[i].path, &err), &err);
   }
 
   gcmz_api_destroy(&api);

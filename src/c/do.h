@@ -12,7 +12,6 @@ typedef void (*gcmz_do_func)(void *data);
  */
 struct gcmz_do_init_option {
   void *window;                    ///< Window handle to subclass for message handling
-  gcmz_do_func on_cleanup;         ///< Cleanup callback (called when window is destroyed, can be NULL)
   gcmz_do_func on_change_activate; ///< Activate change callback (called for WM_ACTIVATE/WM_ACTIVATEAPP, can be NULL)
   void *userdata;                  ///< User data passed to callbacks
 };

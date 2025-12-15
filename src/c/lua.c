@@ -1,6 +1,7 @@
 #include "lua.h"
 
 #include "file.h"
+#include "file_ext.h"
 #include "gcmz_types.h"
 #include "logf.h"
 #include "luautil.h"
@@ -450,35 +451,6 @@ static bool create_state_table(
 }
 
 /**
- * @brief Case-insensitive wide character string comparison (ASCII only)
- *
- * @param s1 First string
- * @param s2 Second string
- * @return 0 if equal, -1 if s1 < s2, 1 if s1 > s2
- */
-static int wcsicmp_ascii(wchar_t const *s1, wchar_t const *s2) {
-  if (!s1 || !s2) {
-    return s1 == s2 ? 0 : (s1 ? 1 : -1);
-  }
-  for (;;) {
-    wchar_t c1 = *s1++;
-    wchar_t c2 = *s2++;
-    if (c1 >= L'A' && c1 <= L'Z') {
-      c1 |= 0x20;
-    }
-    if (c2 >= L'A' && c2 <= L'Z') {
-      c2 |= 0x20;
-    }
-    if (c1 != c2) {
-      return c1 < c2 ? -1 : 1;
-    }
-    if (c1 == 0) {
-      return 0;
-    }
-  }
-}
-
-/**
  * @brief Setup plugin loading paths and load modules from script directory
  *
  * Collects .lua file paths, directory/init.lua paths, and .dll paths,
@@ -580,8 +552,8 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
         }
       } else {
         // For files, check for .lua or .dll extension
-        bool is_lua = (filename_len > 4 && wcsicmp_ascii(find_data.cFileName + filename_len - 4, L".lua") == 0);
-        bool is_dll = (filename_len > 4 && wcsicmp_ascii(find_data.cFileName + filename_len - 4, L".dll") == 0);
+        bool is_lua = (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".lua"));
+        bool is_dll = (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".dll"));
 
         if (!is_lua && !is_dll) {
           continue;

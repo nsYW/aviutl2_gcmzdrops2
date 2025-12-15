@@ -25,7 +25,7 @@ struct gcmz_config {
   bool external_api;
   bool show_debug_menu;
   gcmz_project_path_provider_fn project_path_getter;
-  void *project_path_userdata;
+  void *userdata;
 };
 
 #ifdef _WIN32
@@ -121,7 +121,7 @@ static bool get_dll_directory(NATIVE_CHAR **const dir, struct ov_error *const er
 
     NATIVE_CHAR const *last_slash = ovl_path_find_last_path_sep(module_path);
     if (!last_slash) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "No directory separator found in module path");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "no directory separator found in module path");
       goto cleanup;
     }
 
@@ -155,7 +155,7 @@ struct gcmz_config *gcmz_config_create(struct gcmz_config_options const *const o
   *cfg = (struct gcmz_config){
       .external_api = true,
       .project_path_getter = options ? options->project_path_provider : NULL,
-      .project_path_userdata = options ? options->project_path_provider_userdata : NULL,
+      .userdata = options ? options->userdata : NULL,
   };
 
   // Set default save_paths to %PROJECTDIR%
@@ -292,7 +292,7 @@ static int placeholder_expand_projectdir(struct gcmz_config const *const config,
   int result = -1;
 
   {
-    project_path = config->project_path_getter ? config->project_path_getter(config->project_path_userdata) : NULL;
+    project_path = config->project_path_getter ? config->project_path_getter(config->userdata) : NULL;
     if (!project_path) {
       OV_ERROR_SET_GENERIC(err, ov_error_generic_fail);
       goto cleanup;

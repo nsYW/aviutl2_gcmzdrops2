@@ -1,13 +1,11 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <ovbase.h>
 
 struct gcmzdrops;
 struct gcmz_lua_context;
-struct ov_error;
 struct aviutl2_host_app_table;
+struct aviutl2_edit_section;
 
 /**
  * @brief Create and initialize gcmzdrops context
@@ -18,10 +16,10 @@ struct aviutl2_host_app_table;
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
-bool gcmzdrops_create(struct gcmzdrops **const ctx,
-                      struct gcmz_lua_context *const lua_ctx,
-                      uint32_t const version,
-                      struct ov_error *const err);
+NODISCARD bool gcmzdrops_create(struct gcmzdrops **const ctx,
+                                struct gcmz_lua_context *const lua_ctx,
+                                uint32_t const version,
+                                struct ov_error *const err);
 
 /**
  * @brief Destroy gcmzdrops context
@@ -56,5 +54,6 @@ void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, wchar_t const *const
  * @brief Paste from clipboard
  *
  * @param ctx Plugin context
+ * @param edit Edit section (must be valid, called from within edit section callback)
  */
-void gcmzdrops_paste_from_clipboard(struct gcmzdrops *const ctx);
+void gcmzdrops_paste_from_clipboard(struct gcmzdrops *const ctx, struct aviutl2_edit_section *const edit);

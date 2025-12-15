@@ -473,16 +473,13 @@ static int gcmz_lua_get_script_directory(lua_State *L) {
   char *script_dir = NULL;
   int result = -1;
 
-  {
-    script_dir = g_lua_api_options.script_dir_provider(g_lua_api_options.userdata, &err);
-    if (!script_dir) {
-      OV_ERROR_ADD_TRACE(&err);
-      goto cleanup;
-    }
-
-    lua_pushstring(L, script_dir);
+  script_dir = g_lua_api_options.script_dir_provider(g_lua_api_options.userdata, &err);
+  if (!script_dir) {
+    OV_ERROR_ADD_TRACE(&err);
+    goto cleanup;
   }
 
+  lua_pushstring(L, script_dir);
   result = 1;
 
 cleanup:
@@ -503,45 +500,43 @@ static int gcmz_lua_get_media_info(lua_State *L) {
   }
 
   struct ov_error err = {0};
-  struct gcmz_lua_api_media_info info = {0};
+  struct aviutl2_media_info info = {0};
   int result = -1;
 
-  {
-    if (!g_lua_api_options.get_media_info(filepath, &info, g_lua_api_options.userdata, &err)) {
-      OV_ERROR_ADD_TRACE(&err);
-      goto cleanup;
-    }
+  if (!g_lua_api_options.get_media_info(filepath, &info, g_lua_api_options.userdata, &err)) {
+    OV_ERROR_ADD_TRACE(&err);
+    goto cleanup;
+  }
 
-    lua_createtable(L, 0, 5);
+  lua_createtable(L, 0, 5);
 
-    // video_track_num and audio_track_num are always present (0 has meaning)
-    lua_pushstring(L, "video_track_num");
-    lua_pushinteger(L, info.video_track_num);
+  // video_track_num and audio_track_num are always present (0 has meaning)
+  lua_pushstring(L, "video_track_num");
+  lua_pushinteger(L, info.video_track_num);
+  lua_settable(L, -3);
+
+  lua_pushstring(L, "audio_track_num");
+  lua_pushinteger(L, info.audio_track_num);
+  lua_settable(L, -3);
+
+  // total_time is nil for still images (video_track_num > 0 but no duration)
+  lua_pushstring(L, "total_time");
+  if (info.video_track_num > 0 && info.total_time <= 0) {
+    lua_pushnil(L); // still image
+  } else {
+    lua_pushnumber(L, info.total_time);
+  }
+  lua_settable(L, -3);
+
+  // width and height are nil for audio-only files
+  if (info.video_track_num > 0) {
+    lua_pushstring(L, "width");
+    lua_pushinteger(L, info.width);
     lua_settable(L, -3);
 
-    lua_pushstring(L, "audio_track_num");
-    lua_pushinteger(L, info.audio_track_num);
+    lua_pushstring(L, "height");
+    lua_pushinteger(L, info.height);
     lua_settable(L, -3);
-
-    // total_time is nil for still images (video_track_num > 0 but no duration)
-    lua_pushstring(L, "total_time");
-    if (info.video_track_num > 0 && info.total_time <= 0) {
-      lua_pushnil(L); // still image
-    } else {
-      lua_pushnumber(L, info.total_time);
-    }
-    lua_settable(L, -3);
-
-    // width and height are nil for audio-only files
-    if (info.video_track_num > 0) {
-      lua_pushstring(L, "width");
-      lua_pushinteger(L, info.width);
-      lua_settable(L, -3);
-
-      lua_pushstring(L, "height");
-      lua_pushinteger(L, info.height);
-      lua_settable(L, -3);
-    }
   }
 
   result = 1;

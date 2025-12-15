@@ -130,8 +130,7 @@ static void project_load_handler(struct aviutl2_project_file *project) {
 }
 
 static void paste_from_clipboard_handler(struct aviutl2_edit_section *edit) {
-  (void)edit;
-  gcmzdrops_paste_from_clipboard(g_gcmzdrops);
+  gcmzdrops_paste_from_clipboard(g_gcmzdrops, edit);
 }
 
 void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host);

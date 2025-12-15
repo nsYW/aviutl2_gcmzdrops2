@@ -106,21 +106,6 @@ add_custom_target(${PROJECT_NAME}_generate_version_h
   COMMENT "Checking version information..."
 )
 
-add_custom_target(${PROJECT_NAME}_generate_ini_sign_key_h SOURCES
-  ${CMAKE_CURRENT_BINARY_DIR}/ini_sign_key.h
-)
-add_custom_command(
-OUTPUT
-  ${CMAKE_CURRENT_BINARY_DIR}/ini_sign_key.h
-COMMAND
-  ${CMAKE_COMMAND}
-  -Dinput_file="${CMAKE_CURRENT_SOURCE_DIR}/ini_sign_key.h.in"
-  -Doutput_file="${CMAKE_CURRENT_BINARY_DIR}/ini_sign_key.h"
-  -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/public_key.cmake"
-DEPENDS
-  ${CMAKE_CURRENT_SOURCE_DIR}/ini_sign_key.h.in
-)
-
 set(LUAJIT_PLATFORM x86_64)
 set(LUAJIT_URL "https://github.com/oov/luajit/releases/download/v2.1.20250708-a2/luajit_v2.1.20250708-a2_${LUAJIT_PLATFORM}.zip")
 string(REGEX MATCH "[^/]+$" LUAJIT_ARCHIVE_NAME "${LUAJIT_URL}")
@@ -198,9 +183,6 @@ add_dependencies(gcmzdrops_intf ${PROJECT_NAME}-format)
 
 add_library(gcmzdrops SHARED
   api.c
-  aviutl2.c
-  analyze.c
-  analyze_meta.c
   config.c
   config_dialog.c
   config_dialog.rc
@@ -217,28 +199,22 @@ add_library(gcmzdrops SHARED
   copy.c
   error.c
   file.c
-  gcmz_dataobj.c
   gcmzdrops.c
   gcmzdrops.rc
   i18n.rc
   ini_reader.c
-  ini_sign.c
-  isotime.c
   json.c
-  lodepng.c
   logf.c
   lua.c
   lua_api.c
   luautil.c
   sniffer.c
-  style_config.c
   temp.c
   tray.c
   window_list.c
 )
 set_property(SOURCE gcmzdrops.rc APPEND PROPERTY OBJECT_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/gcmzdrops.manifest
-  ${CMAKE_CURRENT_SOURCE_DIR}/aviutl2_addr.ini
 )
 set_target_properties(gcmzdrops PROPERTIES
   OUTPUT_NAME "GCMZDrops.aux2"
@@ -246,7 +222,7 @@ set_target_properties(gcmzdrops PROPERTIES
   SUFFIX ""
   RUNTIME_OUTPUT_DIRECTORY "${EXPORT_DIR}/Plugin"
 )
-add_dependencies(gcmzdrops ${PROJECT_NAME}_generate_i18n_rc ${PROJECT_NAME}_generate_version_h ${PROJECT_NAME}_generate_ini_sign_key_h)
+add_dependencies(gcmzdrops ${PROJECT_NAME}_generate_i18n_rc ${PROJECT_NAME}_generate_version_h)
 target_link_libraries(gcmzdrops PRIVATE
   gcmzdrops_intf
   "${LUAJIT_DLL}"
@@ -278,39 +254,6 @@ target_link_libraries(test_ini_reader PRIVATE
   shlwapi
 )
 add_test(NAME test_ini_reader COMMAND test_ini_reader)
-
-add_executable(test_ini_sign ini_sign_test.c ini_reader.c isotime.c)
-target_link_libraries(test_ini_sign PRIVATE
-  gcmzdrops_intf
-  ovbase
-  ovl
-  yyjson
-  shlwapi
-)
-add_test(NAME test_ini_sign COMMAND test_ini_sign)
-
-add_executable(test_style_config style_config_test.c style_config.c ini_reader.c)
-target_link_libraries(test_style_config PRIVATE
-  gcmzdrops_intf
-  ovbase
-  ovl
-  yyjson
-  shlwapi
-)
-add_test(NAME test_style_config COMMAND test_style_config)
-
-
-
-add_executable(test_analyze analyze_test.c analyze_meta.c style_config.c ini_reader.c isotime.c lodepng.c json.c logf.c)
-target_link_libraries(test_analyze PRIVATE
-  gcmzdrops_intf
-  ovbase
-  ovl
-  yyjson
-  shlwapi
-  gdiplus
-)
-add_test(NAME test_analyze COMMAND test_analyze)
 
 # Test module for Lua C module cleanup verification
 add_library(test_cleanup SHARED test_data/test_cleanup_module.c)
@@ -391,7 +334,7 @@ add_custom_command(
 )
 add_custom_target(lua_plugin_test_scripts ALL DEPENDS ${LUA_PLUGIN_TEST_OUTPUTS})
 
-add_executable(test_lua lua_test.c file.c logf.c lua.c luautil.c)
+add_executable(test_lua lua_test.c file.c lua.c luautil.c)
 target_link_libraries(test_lua PRIVATE
   gcmzdrops_intf
   "${LUAJIT_DLL}"
@@ -449,13 +392,12 @@ target_link_libraries(test_datauri PRIVATE
 )
 add_test(NAME test_datauri COMMAND test_datauri)
 
-add_executable(test_drop drop_test.c drop.c gcmz_dataobj.c file.c lua.c luautil.c temp.c ini_reader.c logf.c)
+add_executable(test_drop drop_test.c drop.c file.c temp.c ini_reader.c logf.c)
 target_link_libraries(test_drop PRIVATE
   gcmzdrops_intf
   "${LUAJIT_DLL}"
   ovbase
   ovl
-  yyjson
 )
 add_test(NAME test_drop COMMAND test_drop)
 
@@ -543,7 +485,7 @@ target_link_libraries(test_api PRIVATE
 )
 add_test(NAME test_api COMMAND test_api)
 
-add_executable(test_copy copy_test.c config.c json.c aviutl2.c ini_sign.c do.c api.c analyze.c analyze_meta.c drop.c gcmz_dataobj.c file.c style_config.c ini_reader.c isotime.c lua.c lua_api.c luautil.c dataobj.c dataobj_stream.c datauri.c sniffer.c temp.c lodepng.c logf.c)
+add_executable(test_copy copy_test.c json.c do.c api.c drop.c file.c ini_reader.c lua.c lua_api.c luautil.c dataobj.c dataobj_stream.c datauri.c sniffer.c temp.c logf.c)
 target_link_libraries(test_copy PRIVATE
   gcmzdrops_intf
   "${LUAJIT_DLL}"
@@ -564,14 +506,6 @@ target_link_libraries(test_delayed_cleanup PRIVATE
 )
 add_test(NAME test_delayed_cleanup COMMAND test_delayed_cleanup)
 
-add_executable(test_isotime isotime_test.c isotime.c)
-target_link_libraries(test_isotime PRIVATE
-  gcmzdrops_intf
-  ovbase
-  ovl
-)
-add_test(NAME test_isotime COMMAND test_isotime)
-
 add_executable(test_tray tray_test.c tray.c)
 target_link_libraries(test_tray PRIVATE
   gcmzdrops_intf
@@ -587,11 +521,3 @@ target_link_libraries(test_window_list PRIVATE
   ovl
 )
 add_test(NAME test_window_list COMMAND test_window_list)
-
-# Signer utility for INI file signing
-add_executable(ini_signer ini_signer.c ini_reader.c ini_sign.c isotime.c)
-target_link_libraries(ini_signer PRIVATE
-  gcmzdrops_intf
-  ovbase
-  ovl
-)

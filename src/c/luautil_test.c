@@ -52,7 +52,7 @@ static bool get_exe_directory(wchar_t **dir, struct ov_error *const err) {
 
     wchar_t const *last_slash = ovl_path_find_last_path_sep(module_path);
     if (!last_slash) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "No directory separator found in module path");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "no directory separator found in module path");
       goto cleanup;
     }
 

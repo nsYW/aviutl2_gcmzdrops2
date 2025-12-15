@@ -25,27 +25,7 @@
 #include "sniffer.h"
 #include "temp.h"
 
-static int wcsicmp_ascii(wchar_t const *s1, wchar_t const *s2) {
-  if (!s1 || !s2) {
-    return s1 == s2 ? 0 : (s1 ? 1 : -1);
-  }
-  for (;;) {
-    wchar_t c1 = *s1++;
-    wchar_t c2 = *s2++;
-    if (c1 >= L'A' && c1 <= L'Z') {
-      c1 |= 0x20;
-    }
-    if (c2 >= L'A' && c2 <= L'Z') {
-      c2 |= 0x20;
-    }
-    if (c1 != c2) {
-      return c1 < c2 ? -1 : 1;
-    }
-    if (c1 == 0) {
-      return 0;
-    }
-  }
-}
+#include "file_ext.h"
 
 static size_t extract_file_name(wchar_t const *path) {
   if (!path) {
@@ -209,57 +189,57 @@ static wchar_t const *detect_mime_type_from_extension(wchar_t const *filename) {
   }
 
   wchar_t const *ext = filename + ext_pos;
-  if (wcsicmp_ascii(ext, L".txt") == 0) {
+  if (gcmz_extension_equals(ext, L".txt")) {
     return L"text/plain";
-  } else if (wcsicmp_ascii(ext, L".html") == 0 || wcsicmp_ascii(ext, L".htm") == 0) {
+  } else if (gcmz_extension_equals(ext, L".html") || gcmz_extension_equals(ext, L".htm")) {
     return L"text/html";
-  } else if (wcsicmp_ascii(ext, L".css") == 0) {
+  } else if (gcmz_extension_equals(ext, L".css")) {
     return L"text/css";
-  } else if (wcsicmp_ascii(ext, L".js") == 0) {
+  } else if (gcmz_extension_equals(ext, L".js")) {
     return L"application/javascript";
-  } else if (wcsicmp_ascii(ext, L".json") == 0) {
+  } else if (gcmz_extension_equals(ext, L".json")) {
     return L"application/json";
-  } else if (wcsicmp_ascii(ext, L".xml") == 0) {
+  } else if (gcmz_extension_equals(ext, L".xml")) {
     return L"application/xml";
-  } else if (wcsicmp_ascii(ext, L".pdf") == 0) {
+  } else if (gcmz_extension_equals(ext, L".pdf")) {
     return L"application/pdf";
-  } else if (wcsicmp_ascii(ext, L".zip") == 0) {
+  } else if (gcmz_extension_equals(ext, L".zip")) {
     return L"application/zip";
-  } else if (wcsicmp_ascii(ext, L".rar") == 0) {
+  } else if (gcmz_extension_equals(ext, L".rar")) {
     return L"application/x-rar-compressed";
-  } else if (wcsicmp_ascii(ext, L".7z") == 0) {
+  } else if (gcmz_extension_equals(ext, L".7z")) {
     return L"application/x-7z-compressed";
-  } else if (wcsicmp_ascii(ext, L".png") == 0) {
+  } else if (gcmz_extension_equals(ext, L".png")) {
     return L"image/png";
-  } else if (wcsicmp_ascii(ext, L".jpg") == 0 || wcsicmp_ascii(ext, L".jpeg") == 0) {
+  } else if (gcmz_extension_equals(ext, L".jpg") || gcmz_extension_equals(ext, L".jpeg")) {
     return L"image/jpeg";
-  } else if (wcsicmp_ascii(ext, L".gif") == 0) {
+  } else if (gcmz_extension_equals(ext, L".gif")) {
     return L"image/gif";
-  } else if (wcsicmp_ascii(ext, L".bmp") == 0) {
+  } else if (gcmz_extension_equals(ext, L".bmp")) {
     return L"image/bmp";
-  } else if (wcsicmp_ascii(ext, L".svg") == 0) {
+  } else if (gcmz_extension_equals(ext, L".svg")) {
     return L"image/svg+xml";
-  } else if (wcsicmp_ascii(ext, L".ico") == 0) {
+  } else if (gcmz_extension_equals(ext, L".ico")) {
     return L"image/x-icon";
-  } else if (wcsicmp_ascii(ext, L".mp3") == 0) {
+  } else if (gcmz_extension_equals(ext, L".mp3")) {
     return L"audio/mpeg";
-  } else if (wcsicmp_ascii(ext, L".wav") == 0) {
+  } else if (gcmz_extension_equals(ext, L".wav")) {
     return L"audio/wav";
-  } else if (wcsicmp_ascii(ext, L".mp4") == 0) {
+  } else if (gcmz_extension_equals(ext, L".mp4")) {
     return L"video/mp4";
-  } else if (wcsicmp_ascii(ext, L".avi") == 0) {
+  } else if (gcmz_extension_equals(ext, L".avi")) {
     return L"video/x-msvideo";
-  } else if (wcsicmp_ascii(ext, L".doc") == 0) {
+  } else if (gcmz_extension_equals(ext, L".doc")) {
     return L"application/msword";
-  } else if (wcsicmp_ascii(ext, L".docx") == 0) {
+  } else if (gcmz_extension_equals(ext, L".docx")) {
     return L"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  } else if (wcsicmp_ascii(ext, L".xls") == 0) {
+  } else if (gcmz_extension_equals(ext, L".xls")) {
     return L"application/vnd.ms-excel";
-  } else if (wcsicmp_ascii(ext, L".xlsx") == 0) {
+  } else if (gcmz_extension_equals(ext, L".xlsx")) {
     return L"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  } else if (wcsicmp_ascii(ext, L".ppt") == 0) {
+  } else if (gcmz_extension_equals(ext, L".ppt")) {
     return L"application/vnd.ms-powerpoint";
-  } else if (wcsicmp_ascii(ext, L".pptx") == 0) {
+  } else if (gcmz_extension_equals(ext, L".pptx")) {
     return L"application/vnd.openxmlformats-officedocument.presentationml.presentation";
   } else {
     return default_mime;
@@ -311,12 +291,14 @@ static void sanitize_filename(NATIVE_CHAR *filename) {
       *p = L'-';
     }
   }
-  NATIVE_CHAR const *reserved_names[] = {L"CON",  L"PRN",  L"AUX",  L"NUL",  L"COM1", L"COM2", L"COM3", L"COM4",
-                                         L"COM5", L"COM6", L"COM7", L"COM8", L"COM9", L"LPT1", L"LPT2", L"LPT3",
-                                         L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9", NULL};
+  NATIVE_CHAR const *reserved_names[] = {
+      L"CON",  L"PRN",  L"AUX",  L"NUL",  L"COM1", L"COM2", L"COM3", L"COM4", L"COM5", L"COM6", L"COM7", L"COM8",
+      L"COM9", L"LPT1", L"LPT2", L"LPT3", L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9", NULL,
+  };
 
   for (int i = 0; reserved_names[i]; ++i) {
-    if (wcsicmp_ascii(filename, reserved_names[i]) == 0) {
+    // extension_equals actually wcsicmp() == 0 for ASCIIs, so it works here.
+    if (gcmz_extension_equals(filename, reserved_names[i])) {
       filename[0] = L'-';
       break;
     }
@@ -527,7 +509,7 @@ try_extract_dib_format(IDataObject *const dataobj, struct gcmz_file_list *const 
       goto cleanup;
     }
     if (bih->biSize < sizeof(BITMAPINFOHEADER)) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_invalid_argument, "Invalid BITMAPINFOHEADER size");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_invalid_argument, "invalid BITMAPINFOHEADER size");
       goto cleanup;
     }
     DWORD bfOffBits = sizeof(BITMAPFILEHEADER) + bih->biSize;
@@ -546,7 +528,7 @@ try_extract_dib_format(IDataObject *const dataobj, struct gcmz_file_list *const 
       }
       break;
     default:
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_invalid_argument, "Unsupported bit depth");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_invalid_argument, "unsupported bit depth");
       goto cleanup;
     }
 
@@ -839,7 +821,7 @@ try_extract_plain_text(IDataObject *const dataobj, struct gcmz_file_list *const 
     // Find actual text length (may be shorter than allocated)
     size_t text_len = wcsnlen(text_data, text_char_count);
     if (text_len == 0) {
-      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "Empty text data");
+      OV_ERROR_SET(err, ov_error_type_generic, ov_error_generic_fail, "empty text data");
       goto cleanup;
     }
 
@@ -885,10 +867,10 @@ cleanup:
   return result;
 }
 
-NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
+NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const dataobj,
                                                  struct gcmz_file_list *const file_list,
                                                  struct ov_error *const err) {
-  if (!pDataObj || !file_list) {
+  if (!dataobj || !file_list) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
@@ -898,12 +880,13 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #endif
 
   size_t initial_count = gcmz_file_list_count(file_list);
+  IDataObject *const obj = (IDataObject *)dataobj;
 
   // 1. Data URI (highest priority - no false positives)
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying Data URI format\n");
 #endif
-  bool data_uri_ret = try_extract_data_uri((IDataObject *)pDataObj, file_list, err);
+  bool data_uri_ret = try_extract_data_uri(obj, file_list, err);
   if (data_uri_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Data URI format extraction succeeded\n");
@@ -921,8 +904,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying PNG format\n");
 #endif
-  bool png_ret =
-      try_extract_custom_image_format((IDataObject *)pDataObj, L"PNG", L".png", L"image/png", file_list, err);
+  bool png_ret = try_extract_custom_image_format(obj, L"PNG", L".png", L"image/png", file_list, err);
   if (png_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: PNG format extraction succeeded\n");
@@ -940,8 +922,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying JPEG format\n");
 #endif
-  bool jpeg_ret =
-      try_extract_custom_image_format((IDataObject *)pDataObj, L"JPEG", L".jpg", L"image/jpeg", file_list, err);
+  bool jpeg_ret = try_extract_custom_image_format(obj, L"JPEG", L".jpg", L"image/jpeg", file_list, err);
   if (jpeg_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: JPEG format extraction succeeded\n");
@@ -959,7 +940,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying FileContents format\n");
 #endif
-  bool file_contents_ret = try_extract_file_contents((IDataObject *)pDataObj, file_list, err);
+  bool file_contents_ret = try_extract_file_contents(obj, file_list, err);
   if (file_contents_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: FileContents format extraction succeeded\n");
@@ -977,7 +958,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying HDROP format\n");
 #endif
-  bool hdrop_ret = try_extract_hdrop_format((IDataObject *)pDataObj, file_list, err);
+  bool hdrop_ret = try_extract_hdrop_format(obj, file_list, err);
   if (hdrop_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: HDROP format extraction succeeded\n");
@@ -995,7 +976,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying DIB format\n");
 #endif
-  bool dib_ret = try_extract_dib_format((IDataObject *)pDataObj, file_list, err);
+  bool dib_ret = try_extract_dib_format(obj, file_list, err);
   if (dib_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: DIB format extraction succeeded\n");
@@ -1013,7 +994,7 @@ NODISCARD bool gcmz_dataobj_extract_from_dataobj(void *const pDataObj,
 #if GCMZ_DEBUG
   OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Trying plain text fallback\n");
 #endif
-  bool text_ret = try_extract_plain_text((IDataObject *)pDataObj, file_list, err);
+  bool text_ret = try_extract_plain_text(obj, file_list, err);
   if (text_ret && gcmz_file_list_count(file_list) > initial_count) {
 #if GCMZ_DEBUG
     OutputDebugStringW(L"gcmz_dataobj_extract_from_dataobj: Plain text fallback succeeded\n");

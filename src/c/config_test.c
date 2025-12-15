@@ -244,7 +244,7 @@ static void test_config_get_save_path_project_based(void) {
   config = gcmz_config_create(
       &(struct gcmz_config_options){
           .project_path_provider = mock_get_project_path,
-          .project_path_provider_userdata = NULL,
+          .userdata = NULL,
       },
       &err);
   if (!TEST_SUCCEEDED(config != NULL, &err)) {
@@ -286,7 +286,7 @@ static void test_config_get_save_path_fallback_to_shared(void) {
   config = gcmz_config_create(
       &(struct gcmz_config_options){
           .project_path_provider = mock_get_project_path,
-          .project_path_provider_userdata = NULL,
+          .userdata = NULL,
       },
       &err);
   if (!TEST_SUCCEEDED(config != NULL, &err)) {

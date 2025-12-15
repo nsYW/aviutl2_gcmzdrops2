@@ -25,8 +25,6 @@ struct gcmz_do {
   struct cndvar blocking_completion;
   bool blocking_initialized;
   mtx_t blocking_mutex;
-
-  gcmz_do_func cleanup_callback;
   gcmz_do_func activate_callback;
   void *userdata;
 };
@@ -71,9 +69,6 @@ subclass_proc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSu
   }
   switch (uMsg) {
   case WM_DESTROY:
-    if (d->cleanup_callback) {
-      d->cleanup_callback(d->userdata);
-    }
     uninstall_subclass(hwnd);
     break;
   case WM_ACTIVATE:
@@ -144,7 +139,6 @@ static struct gcmz_do *do_create(struct gcmz_do_init_option const *const option,
     cndvar_init(&d->blocking_completion);
     mtx_init(&d->blocking_mutex, mtx_plain);
     d->window = window;
-    d->cleanup_callback = option->on_cleanup;
     d->userdata = option->userdata;
     d->activate_callback = option->on_change_activate;
     d->blocking_initialized = true;

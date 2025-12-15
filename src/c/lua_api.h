@@ -6,6 +6,7 @@
 
 struct lua_State;
 struct aviutl2_edit_info;
+struct aviutl2_media_info;
 
 /**
  * @brief Callback function type for creating temporary file
@@ -59,17 +60,6 @@ typedef void (*gcmz_lua_api_debug_print_fn)(void *userdata, char const *message)
 typedef char *(*gcmz_lua_api_script_dir_provider_fn)(void *userdata, struct ov_error *err);
 
 /**
- * @brief Media information structure for Lua API
- */
-struct gcmz_lua_api_media_info {
-  int video_track_num; /**< Video track count (0 if no video) */
-  int audio_track_num; /**< Audio track count (0 if no audio) */
-  double total_time;   /**< Total time in seconds (0 for still images) */
-  int width;           /**< Video width */
-  int height;          /**< Video height */
-};
-
-/**
  * @brief Callback function type for getting media file information
  *
  * @param filepath Media file path (UTF-8)
@@ -79,7 +69,7 @@ struct gcmz_lua_api_media_info {
  * @return true on success, false on failure (unsupported or error)
  */
 typedef NODISCARD bool (*gcmz_lua_api_get_media_info_fn)(char const *filepath,
-                                                         struct gcmz_lua_api_media_info *info,
+                                                         struct aviutl2_media_info *info,
                                                          void *userdata,
                                                          struct ov_error *err);
 
