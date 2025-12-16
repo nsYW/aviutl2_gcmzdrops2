@@ -70,7 +70,7 @@ BOOL __declspec(dllexport) InitializePlugin(DWORD version) {
     if (g_mo) {
       mo_set_default(g_mo);
     } else {
-      gcmz_logf_warn(NULL, "%s", "%s", gettext("failed to load language resources, continuing without them."));
+      gcmz_logf_warn(NULL, "%s", "%s", "failed to load language resources, continuing without them.");
     }
   }
 
