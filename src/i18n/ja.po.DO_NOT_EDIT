@@ -59,9 +59,6 @@ msgstr "年(&Y)"
 msgid "...(&I)"
 msgstr "...(&I)"
 
-msgid "All Files"
-msgstr "すべてのファイル"
-
 msgid "Any dropped files are copied to the save destination before being dropped."
 msgstr "ドロップされるすべてのファイルはドロップ時に保存先へコピーされます。"
 
@@ -70,9 +67,6 @@ msgstr "自動判定"
 
 msgid "Cancel"
 msgstr "キャンセル"
-
-msgid "Choose Screenshot Save Location"
-msgstr "スクリーンショットの保存先を選択してください"
 
 msgctxt "cleanup_stale_temporary_directories"
 msgid "Cleaning up stale temporary directories..."
@@ -164,9 +158,6 @@ msgstr "↑(&U)"
 msgid "OK"
 msgstr "OK"
 
-msgid "PNG Image"
-msgstr "PNG画像"
-
 msgid "Please select the destination folder"
 msgstr "保存先フォルダーを選択してください"
 
@@ -189,9 +180,6 @@ msgstr "秒(&E)"
 
 msgid "Save Destination"
 msgstr "保存先"
-
-msgid "Save Timeline Screenshot (Debug)"
-msgstr "タイムラインのスクリーンショットを保存（デバッグ用）"
 
 msgid ""
 "Specifies where to create files when dropping images from the browser, etc.\n"
@@ -235,22 +223,11 @@ msgstr ""
 msgid "[GCMZDrops] Paste from Clipboard"
 msgstr "[GCMZDrops] クリップボードから貼り付け"
 
-#, c-format
-msgid "detected AviUtl ExEdit2 version is %1$s"
-msgstr "検出された AviUtl ExEdit2 のバージョンは %1$s です"
-
-#, c-format
-msgid "detected AviUtl ExEdit2 version is %1$s, but signature verification failed. the data may not be from an official release."
-msgstr "検出された AviUtl ExEdit2 のバージョンは %1$s ですが、署名の検証に失敗しました。公式リリースではないデータの可能性があります。"
-
 msgid "dialog_ui_font"
 msgstr ""
 "Yu Gothic UI\n"
 "Meiryo UI\n"
 "MS UI Gothic"
-
-msgid "drop via official API failed, falling back to traditional method"
-msgstr "公式APIでのドロップに失敗しました。従来の方法にフォールバックします"
 
 #, c-format
 msgid "error occurred while executing %1$s script handler"
@@ -263,10 +240,6 @@ msgstr "外部連携APIは既に存在しています"
 msgctxt "external_api"
 msgid "external API initialized successfully"
 msgstr "外部連携APIが正常に初期化されました"
-
-msgctxt "external_api"
-msgid "external API is disabled because the AviUtl ExEdit2 version is unknown"
-msgstr "AviUtl ExEdit2 のバージョンが不明なため、外部連携APIは無効化されています"
 
 msgid "failed to add handler script %1$hs"
 msgstr "ハンドラースクリプト %1$hs の追加に失敗しました"
@@ -282,20 +255,14 @@ msgctxt "cleanup_stale_temporary_directories"
 msgid "failed to cleanup stale temporary directories"
 msgstr "古い一時ディレクトリのクリーンアップに失敗しました"
 
-msgid "failed to create thread"
-msgstr "スレッドの作成に失敗しました"
+msgid "failed to complete delayed initialization"
+msgstr "遅延初期化の完了に失敗しました"
 
 msgid "failed to create unique temporary file"
 msgstr "一意な一時ファイルの作成に失敗しました"
 
-msgid "failed to determine cursor position, using default drop coordinates"
-msgstr "カーソル位置を特定できませんでした。デフォルトのドロップ座標を使用します"
-
 msgid "failed to drop from external API request"
 msgstr "外部連携APIリクエストからのドロップに失敗しました"
-
-msgid "failed to get debug menu visibility setting"
-msgstr "デバッグメニューの表示設定を取得できませんでした"
 
 msgid "failed to get external API setting"
 msgstr "外部連携APIの設定を取得できませんでした"
@@ -303,29 +270,21 @@ msgstr "外部連携APIの設定を取得できませんでした"
 msgid "failed to handle project load"
 msgstr "プロジェクトの読み込み処理に失敗しました"
 
-msgid "failed to initialize condition variable"
-msgstr "条件変数の初期化に失敗しました"
-
 msgid "failed to initialize external API"
 msgstr "外部連携APIの初期化に失敗しました"
 
 msgid "failed to initialize external API, continuing without it."
 msgstr "外部連携APIの初期化に失敗しました。外部連携APIなしで継続します。"
 
-msgid "failed to initialize mutex"
-msgstr "ミューテックスの初期化に失敗しました"
+#, c-format
+msgid "failed to insert file: %1$ls"
+msgstr "ファイルの挿入に失敗しました: %1$ls"
 
-msgid "failed to load language resources, continuing without them."
-msgstr "言語リソースの読み込みに失敗しました。言語リソースなしで継続します。"
-
-msgid "failed to move cursor after drop"
-msgstr "カーソルを目標位置に移動できませんでした"
+msgid "failed to insert files into timeline"
+msgstr "タイムラインへのファイルの挿入に失敗しました"
 
 msgid "failed to paste from clipboard"
 msgstr "クリップボードからの貼り付けに失敗しました"
-
-msgid "failed to perform debug capture"
-msgstr "デバッグキャプチャの実行に失敗しました"
 
 msgid "failed to remove temporary directory"
 msgstr "一時ディレクトリの削除に失敗しました"
@@ -336,32 +295,12 @@ msgstr "外部連携APIのプロジェクトデータの更新に失敗しまし
 msgid "failed to update settings"
 msgstr "設定の更新に失敗しました"
 
-msgid "failed to update tray icon visibility"
-msgstr "トレイアイコンの表示状態の更新に失敗しました"
-
-#, c-format
-msgid "invalid hex character at position %1$zu"
-msgstr "位置 %1$zu に無効な16進数文字があります"
-
-msgid "invalid hex character in signature"
-msgstr "署名に無効な16進数文字が含まれています"
-
-#, c-format
-msgid "invalid key length: expected %1$d hex characters, got %2$zu"
-msgstr "無効なキー長: %1$d 文字の16進数が必要ですが、%2$zu 文字でした"
-
-msgid "invalid updated_at timestamp format"
-msgstr "updated_at のタイムスタンプ形式が無効です"
+msgid "insertion position collision detected, cannot insert with specified margin"
+msgstr "挿入位置の衝突を検出しました。指定された余白で挿入できません"
 
 #, c-format
 msgid "maximum number of menu items(%1$d) exceeded"
 msgstr "メニュー項目の最大数 (%1$d) を超えました"
-
-msgid "no signature found in INI file"
-msgstr "INIファイルに署名が見つかりません"
-
-msgid "no updated_at found in global section"
-msgstr "グローバルセクションに updated_at が見つかりません"
 
 #, c-format
 msgctxt "cleanup_stale_temporary_directories"
@@ -369,18 +308,19 @@ msgid "removed: %1$ls"
 msgstr "削除しました: %1$ls"
 
 #, c-format
-msgid "saved timeline screenshot to \"%ls\""
-msgstr "タイムラインのスクリーンショットを \"%1$ls\" に保存しました。"
+msgid "skipping file with no extension: %1$ls"
+msgstr "拡張子のないファイルをスキップ: %1$ls"
+
+msgid "skipping invalid file in list"
+msgstr "リスト内の無効なファイルをスキップ"
+
+#, c-format
+msgid "skipping unsupported file: %1$ls"
+msgstr "サポートされていないファイルをスキップ: %1$ls"
 
 msgctxt "cleanup_stale_temporary_directories"
 msgid "stale temporary directory cleanup complete"
 msgstr "古い一時ディレクトリのクリーンアップが完了しました"
-
-msgid "too many AviUtl2 manager windows found"
-msgstr "AviUtl2 マネージャーウィンドウが多すぎます"
-
-msgid "unknown AviUtl ExEdit2 version detected. some features will be disabled."
-msgstr "不明な AviUtl ExEdit2 のバージョンが検出されました。一部の機能は無効化されます。"
 
 #, c-format
 msgid "unknown processing mode: %1$d"

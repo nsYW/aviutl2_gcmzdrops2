@@ -58,9 +58,6 @@ msgstr "年(&Y)"
 msgid "...(&I)"
 msgstr "浏览(&I)..."
 
-msgid "All Files"
-msgstr "所有文件"
-
 msgid "Any dropped files are copied to the save destination before being dropped."
 msgstr "所有被拖放的文件在拖放前都会先复制到保存位置。"
 
@@ -69,9 +66,6 @@ msgstr "自动检测"
 
 msgid "Cancel"
 msgstr "取消"
-
-msgid "Choose Screenshot Save Location"
-msgstr "选择截图保存位置"
 
 msgctxt "cleanup_stale_temporary_directories"
 msgid "Cleaning up stale temporary directories..."
@@ -163,9 +157,6 @@ msgstr "上移(&U)"
 msgid "OK"
 msgstr "确定"
 
-msgid "PNG Image"
-msgstr "PNG图像"
-
 msgid "Please select the destination folder"
 msgstr "请选择目标文件夹"
 
@@ -188,9 +179,6 @@ msgstr "秒(&E)"
 
 msgid "Save Destination"
 msgstr "保存位置"
-
-msgid "Save Timeline Screenshot (Debug)"
-msgstr "保存时间轴截图（调试）"
 
 msgid ""
 "Specifies where to create files when dropping images from the browser, etc.\n"
@@ -234,23 +222,11 @@ msgstr ""
 msgid "[GCMZDrops] Paste from Clipboard"
 msgstr "[GCMZDrops]从剪贴板粘贴"
 
-#, c-format
-msgid "detected AviUtl ExEdit2 version is %1$s"
-msgstr "检测到AviUtl ExEdit2版本为 %1$s"
-
-#, c-format
-msgid "detected AviUtl ExEdit2 version is %1$s, but signature verification failed. the data may not be from an official release."
-msgstr "检测到AviUtl ExEdit2版本为 %1$s，但签名验证失败。数据可能来自非官方版本。"
-
 msgid "dialog_ui_font"
 msgstr ""
 "Microsoft YaHei UI\n"
 "Microsoft YaHei\n"
 "SimSun"
-
-#, fuzzy
-msgid "drop via official API failed, falling back to traditional method"
-msgstr "通过官方API拖放失败，将回退为传统方法"
 
 #, fuzzy, c-format
 msgid "error occurred while executing %1$s script handler"
@@ -263,10 +239,6 @@ msgstr "外部API已存在"
 msgctxt "external_api"
 msgid "external API initialized successfully"
 msgstr "外部API初始化成功"
-
-msgctxt "external_api"
-msgid "external API is disabled because the AviUtl ExEdit2 version is unknown"
-msgstr "由于AviUtl ExEdit2版本未知，外部API已被禁用"
 
 #, fuzzy
 msgid "failed to add handler script %1$hs"
@@ -287,22 +259,11 @@ msgstr "过时的临时目录清理失败"
 msgid "failed to complete delayed initialization"
 msgstr "托盘图标可见性更新失败"
 
-msgid "failed to create thread"
-msgstr "线程创建失败"
-
 msgid "failed to create unique temporary file"
 msgstr "唯一临时文件创建失败"
 
-#, fuzzy
-msgid "failed to determine cursor position, using default drop coordinates"
-msgstr "无法确定光标位置，将使用默认拖放坐标"
-
 msgid "failed to drop from external API request"
 msgstr "来自外部API请求的拖放失败"
-
-#, fuzzy
-msgid "failed to get debug menu visibility setting"
-msgstr "调试菜单可见性设置获取失败"
 
 msgid "failed to get external API setting"
 msgstr "外部API设置获取失败"
@@ -311,30 +272,25 @@ msgstr "外部API设置获取失败"
 msgid "failed to handle project load"
 msgstr "工程加载处理失败"
 
-msgid "failed to initialize condition variable"
-msgstr "条件变量初始化失败"
-
 msgid "failed to initialize external API"
 msgstr "外部API初始化失败"
 
 msgid "failed to initialize external API, continuing without it."
 msgstr "外部API初始化失败，将在不使用API的情况下继续。"
 
-msgid "failed to initialize mutex"
-msgstr "互斥锁初始化失败"
+#, fuzzy, c-format
+msgid "failed to insert file: %1$ls"
+msgstr "处理器脚本文件 %1$ls 添加失败"
+
+#, fuzzy
+msgid "failed to insert files into timeline"
+msgstr "条件变量初始化失败"
 
 msgid "failed to load language resources, continuing without them."
 msgstr "语言资源加载失败，将在没有语言资源的情况下继续。"
 
-#, fuzzy
-msgid "failed to move cursor after drop"
-msgstr "无法将光标移动到目标位置"
-
 msgid "failed to paste from clipboard"
 msgstr "从剪贴板粘贴失败"
-
-msgid "failed to perform debug capture"
-msgstr "调试捕获执行失败"
 
 msgid "failed to remove temporary directory"
 msgstr "临时目录删除失败"
@@ -348,54 +304,33 @@ msgid "failed to update settings"
 msgstr "设置更新失败"
 
 #, fuzzy
-msgid "failed to update tray icon visibility"
-msgstr "托盘图标可见性更新失败"
-
 msgid "insertion position collision detected, cannot insert with specified margin"
-msgstr ""
-
-#, c-format
-msgid "invalid hex character at position %1$zu"
-msgstr "位置 %1$zu 处的十六进制字符无效"
-
-msgid "invalid hex character in signature"
-msgstr "签名中包含无效的十六进制字符"
-
-#, c-format
-msgid "invalid key length: expected %1$d hex characters, got %2$zu"
-msgstr "密钥长度无效: 期望 %1$d 个十六进制字符，实际为 %2$zu 个"
-
-msgid "invalid updated_at timestamp format"
-msgstr "updated_at 时间戳格式无效"
+msgstr "检测到插入位置冲突，无法按指定的边距插入"
 
 #, c-format
 msgid "maximum number of menu items(%1$d) exceeded"
 msgstr "超出菜单项的最大数量 (%1$d)"
-
-msgid "no signature found in INI file"
-msgstr "在INI文件中找不到签名"
-
-msgid "no updated_at found in global section"
-msgstr "在全局段中找不到 updated_at"
 
 #, c-format
 msgctxt "cleanup_stale_temporary_directories"
 msgid "removed: %1$ls"
 msgstr "已删除: %1$ls"
 
-#, c-format
-msgid "saved timeline screenshot to \"%ls\""
-msgstr "时间轴截图已保存到 \"%1$ls\"。"
+#, fuzzy, c-format
+msgid "skipping file with no extension: %1$ls"
+msgstr "跳过无扩展名的文件: %1$ls"
+
+#, fuzzy
+msgid "skipping invalid file in list"
+msgstr "跳过列表中的无效文件"
+
+#, fuzzy, c-format
+msgid "skipping unsupported file: %1$ls"
+msgstr "跳过不支持的文件: %1$ls"
 
 msgctxt "cleanup_stale_temporary_directories"
 msgid "stale temporary directory cleanup complete"
 msgstr "过时的临时目录清理完成"
-
-msgid "too many AviUtl2 manager windows found"
-msgstr "找到的AviUtl2管理器窗口过多"
-
-msgid "unknown AviUtl ExEdit2 version detected. some features will be disabled."
-msgstr "检测到未知的AviUtl ExEdit2版本。某些功能将被禁用。"
 
 #, c-format
 msgid "unknown processing mode: %1$d"
