@@ -1499,6 +1499,25 @@ cleanup:
 }
 
 /**
+ * Callback function invoked when the host is ready
+ *
+ * This signals that the main window is fully initialized and user interaction has begun.
+ *
+ * @param userdata User-defined data pointer (struct gcmzdrops*)
+ */
+static void on_ready(void *const userdata) {
+  struct gcmzdrops *const ctx = (struct gcmzdrops *)userdata;
+  if (!ctx) {
+    return;
+  }
+
+  mtx_lock(&ctx->init_mtx);
+  ctx->plugin_state = gcmzdrops_plugin_state_registered;
+  cnd_signal(&ctx->init_cond);
+  mtx_unlock(&ctx->init_mtx);
+}
+
+/**
  * Callback function invoked when the active window state changes.
  *
  * This callback is called frequently by gcmz_do_init, so performance is important.
@@ -1885,7 +1904,6 @@ NODISCARD bool gcmzdrops_create(struct gcmzdrops **const ctx,
   }
 
   struct gcmzdrops *c = NULL;
-  HWND main_window = NULL;
   wchar_t *script_dir = NULL;
   bool result = false;
 
@@ -1915,22 +1933,27 @@ NODISCARD bool gcmzdrops_create(struct gcmzdrops **const ctx,
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
-
     gcmz_do_sub_do(c->do_sub, delayed_initialization, c);
+
+    {
+      HWND main_window = NULL;
+      if (!find_manager_windows(&main_window, 1, err)) {
+        OV_ERROR_ADD_TRACE(err);
+        goto cleanup;
+      }
+      if (!gcmz_do_init(
+              &(struct gcmz_do_init_option){
+                  .window = main_window,
+                  .on_change_activate = on_change_activate,
+                  .on_ready = on_ready,
+                  .userdata = c,
+              },
+              err)) {
+        OV_ERROR_ADD_TRACE(err);
+        goto cleanup;
+      }
+    }
     gcmz_error_set_owner_window_callback(get_error_dialog_owner_window);
-    if (!find_manager_windows(&main_window, 1, err)) {
-      OV_ERROR_ADD_TRACE(err);
-      goto cleanup;
-    }
-    if (!gcmz_do_init(
-            &(struct gcmz_do_init_option){
-                .window = main_window,
-                .on_change_activate = on_change_activate,
-            },
-            err)) {
-      OV_ERROR_ADD_TRACE(err);
-      goto cleanup;
-    }
 
     if (!gcmz_temp_create_directory(err)) {
       OV_ERROR_ADD_TRACE(err);
@@ -2085,12 +2108,13 @@ void gcmzdrops_destroy(struct gcmzdrops **const ctx) {
   OV_FREE(ctx);
 }
 
-void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, wchar_t const *const project_path) {
+void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, struct aviutl2_project_file *const project) {
   if (!ctx) {
     return;
   }
   struct ov_error err = {0};
   bool success = false;
+  wchar_t const *const project_path = project ? project->get_project_file_path() : NULL;
   size_t const path_len = project_path ? wcslen(project_path) : 0;
   if (!path_len) {
     if (ctx->project_path) {
@@ -2103,7 +2127,15 @@ void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, wchar_t const *const
     }
     wcscpy(ctx->project_path, project_path);
   }
-  gcmz_do_sub_do(ctx->do_sub, update_api_project_data, ctx);
+
+  {
+    mtx_lock(&ctx->init_mtx);
+    bool const initialized = ctx->plugin_state == gcmzdrops_plugin_state_registered;
+    mtx_unlock(&ctx->init_mtx);
+    if (initialized) {
+      gcmz_do_sub_do(ctx->do_sub, update_api_project_data, ctx);
+    }
+  }
   success = true;
 cleanup:
   if (!success) {
@@ -2191,15 +2223,8 @@ void gcmzdrops_register(struct gcmzdrops *const ctx, struct aviutl2_host_app_tab
   if (!ctx || !host) {
     return;
   }
-
   struct aviutl2_edit_handle *const edit = host->create_edit_handle();
   if (edit) {
     ctx->edit = edit;
   }
-
-  // Signal delayed initialization thread that RegisterPlugin is complete
-  mtx_lock(&ctx->init_mtx);
-  ctx->plugin_state = gcmzdrops_plugin_state_registered;
-  cnd_signal(&ctx->init_cond);
-  mtx_unlock(&ctx->init_mtx);
 }

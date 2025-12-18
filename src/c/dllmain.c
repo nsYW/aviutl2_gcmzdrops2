@@ -126,7 +126,7 @@ static void config_menu_handler(HWND const hwnd, HINSTANCE const dll_hinst) {
 }
 
 static void project_load_handler(struct aviutl2_project_file *project) {
-  gcmzdrops_on_project_load(g_gcmzdrops, project->get_project_file_path());
+  gcmzdrops_on_project_load(g_gcmzdrops, project);
 }
 
 static void paste_from_clipboard_handler(struct aviutl2_edit_section *edit) {

@@ -26,6 +26,7 @@ struct gcmz_do {
   bool blocking_initialized;
   mtx_t blocking_mutex;
   gcmz_do_func activate_callback;
+  gcmz_do_func ready_callback;
   void *userdata;
 };
 
@@ -79,6 +80,13 @@ subclass_proc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSu
   case WM_ACTIVATEAPP:
     if (d->activate_callback) {
       d->activate_callback(d->userdata);
+    }
+    break;
+  case WM_USER:
+  case WM_MOUSEMOVE:
+    if (d->ready_callback) {
+      d->ready_callback(d->userdata);
+      d->ready_callback = NULL;
     }
     break;
   }
@@ -141,6 +149,7 @@ static struct gcmz_do *do_create(struct gcmz_do_init_option const *const option,
     d->window = window;
     d->userdata = option->userdata;
     d->activate_callback = option->on_change_activate;
+    d->ready_callback = option->on_ready;
     d->blocking_initialized = true;
 
     d->window_thread_id = GetWindowThreadProcessId(d->window, NULL);

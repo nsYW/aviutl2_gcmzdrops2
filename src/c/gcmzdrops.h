@@ -6,6 +6,7 @@ struct gcmzdrops;
 struct gcmz_lua_context;
 struct aviutl2_host_app_table;
 struct aviutl2_edit_section;
+struct aviutl2_project_file;
 
 /**
  * @brief Create and initialize gcmzdrops context
@@ -46,9 +47,9 @@ void gcmzdrops_show_config_dialog(struct gcmzdrops *const ctx, void *const hwnd,
  * @brief Handle project load event
  *
  * @param ctx Plugin context
- * @param project_path Project file path (can be NULL)
+ * @param project Project file interface
  */
-void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, wchar_t const *const project_path);
+void gcmzdrops_on_project_load(struct gcmzdrops *const ctx, struct aviutl2_project_file *const project);
 
 /**
  * @brief Paste from clipboard
