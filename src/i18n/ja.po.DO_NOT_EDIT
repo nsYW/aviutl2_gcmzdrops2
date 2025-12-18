@@ -143,6 +143,10 @@ msgstr "GCMZDrops の設定..."
 msgid "GCMZDrops requires AviUtl ExEdit2 %1$s or later."
 msgstr "GCMZDrops を使用するには AviUtl ExEdit2 %1$s 以降が必要です。"
 
+msgctxt "config_dialog"
+msgid "Handlers"
+msgstr "ハンドラー"
+
 msgid "M&inute"
 msgstr "分(&I)"
 
@@ -155,6 +159,10 @@ msgstr "↓(&D)"
 msgid "Move &Up"
 msgstr "↑(&U)"
 
+msgctxt "handler_script"
+msgid "Name"
+msgstr "名前"
+
 msgid "OK"
 msgstr "OK"
 
@@ -166,6 +174,10 @@ msgstr "コピー優先"
 
 msgid "Prefer direct read"
 msgstr "直接読み込み優先"
+
+msgctxt "handler_script"
+msgid "Priority"
+msgstr "優先度"
 
 msgctxt "external_api"
 msgid "Retry?"
@@ -180,6 +192,14 @@ msgstr "秒(&E)"
 
 msgid "Save Destination"
 msgstr "保存先"
+
+msgctxt "config_dialog"
+msgid "Settings"
+msgstr "設定"
+
+msgctxt "handler_script"
+msgid "Source"
+msgstr "登録元"
 
 msgid ""
 "Specifies where to create files when dropping images from the browser, etc.\n"
@@ -241,12 +261,12 @@ msgctxt "external_api"
 msgid "external API initialized successfully"
 msgstr "外部連携APIが正常に初期化されました"
 
-msgid "failed to add handler script %1$hs"
-msgstr "ハンドラースクリプト %1$hs の追加に失敗しました"
-
 #, c-format
 msgid "failed to add handler script file %1$ls"
 msgstr "ハンドラースクリプトファイル %1$ls の追加に失敗しました"
+
+msgid "failed to add handler script from %1$hs"
+msgstr "%1$hs からのハンドラースクリプト追加に失敗しました"
 
 msgid "failed to clean up temporary file"
 msgstr "一時ファイルのクリーンアップに失敗しました"
