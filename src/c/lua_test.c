@@ -34,10 +34,32 @@
 #  pragma GCC diagnostic pop
 #endif // __GNUC__
 
-// Dummy debug_print function for tests
+// Global storage for debug_print messages (single concatenated string)
+static char *g_debug_messages = NULL;
+
+// debug_print function that logs messages for testing
 static int test_debug_print(lua_State *L) {
-  (void)L;
+  int n = lua_gettop(L);
+  for (int i = 1; i <= n; ++i) {
+    char const *msg = lua_tostring(L, i);
+    if (msg) {
+      size_t const len = strlen(msg);
+      size_t const cur_len = OV_ARRAY_LENGTH(g_debug_messages);
+      if (!OV_ARRAY_GROW(&g_debug_messages, cur_len + len + 1)) {
+        return 0;
+      }
+      memcpy(g_debug_messages + cur_len, msg, len);
+      g_debug_messages[cur_len + len] = '\0';
+    }
+  }
   return 0;
+}
+
+// Clear debug messages log
+static void clear_debug_messages(void) {
+  if (g_debug_messages) {
+    OV_ARRAY_DESTROY(&g_debug_messages);
+  }
 }
 
 // Callback to register test APIs (including debug_print)
@@ -595,12 +617,13 @@ static void test_add_handler_script(void) {
 
   // Test adding a simple handler script
   char const script[] = "return {\n"
+                        "  name = 'test_module',\n"
                         "  priority = 500,\n"
                         "  drag_enter = function(files, state) return true end,\n"
                         "  drop = function(files, state) end\n"
                         "}\n";
 
-  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, "test_module", script, sizeof(script) - 1, &err), &err)) {
+  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, script, sizeof(script) - 1, "test://test_module", &err), &err)) {
     gcmz_lua_destroy(&ctx);
     return;
   }
@@ -634,7 +657,7 @@ static void test_add_handler_script(void) {
   lua_pushstring(L, "name");
   lua_gettable(L, -2);
   TEST_CHECK(lua_isstring(L, -1));
-  TEST_CHECK(strcmp(lua_tostring(L, -1), "ex:test_module") == 0);
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "test_module") == 0);
   lua_pop(L, 1);
 
   // Check active
@@ -716,7 +739,7 @@ static void test_add_handler_script_file(void) {
   lua_pushstring(L, "name");
   lua_gettable(L, -2);
   TEST_CHECK(lua_isstring(L, -1));
-  TEST_CHECK(strncmp(lua_tostring(L, -1), "ex:@", 4) == 0);
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "Test Handler") == 0);
   lua_pop(L, 1);
 
   // Check active
@@ -760,21 +783,21 @@ static void test_add_handler_script_priority_sorting(void) {
   }
 
   // Add modules with different priorities (not in order)
-  char const script_low[] = "return { priority = 1000 }";
-  char const script_high[] = "return { priority = 100 }";
-  char const script_mid[] = "return { priority = 500 }";
+  char const script_low[] = "return { name = 'low_priority', priority = 1000 }";
+  char const script_high[] = "return { name = 'high_priority', priority = 100 }";
+  char const script_mid[] = "return { name = 'mid_priority', priority = 500 }";
 
-  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, "low_priority", script_low, sizeof(script_low) - 1, &err),
+  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, script_low, sizeof(script_low) - 1, "test://low_priority", &err),
                       &err)) {
     gcmz_lua_destroy(&ctx);
     return;
   }
-  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, "high_priority", script_high, sizeof(script_high) - 1, &err),
-                      &err)) {
+  if (!TEST_SUCCEEDED(
+          gcmz_lua_add_handler_script(ctx, script_high, sizeof(script_high) - 1, "test://high_priority", &err), &err)) {
     gcmz_lua_destroy(&ctx);
     return;
   }
-  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, "mid_priority", script_mid, sizeof(script_mid) - 1, &err),
+  if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, script_mid, sizeof(script_mid) - 1, "test://mid_priority", &err),
                       &err)) {
     gcmz_lua_destroy(&ctx);
     return;
@@ -806,7 +829,7 @@ static void test_add_handler_script_priority_sorting(void) {
   }
   lua_pushstring(L, "name");
   lua_gettable(L, -2);
-  TEST_CHECK(strcmp(lua_tostring(L, -1), "ex:high_priority") == 0);
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "high_priority") == 0);
   lua_pop(L, 2);
 
   // Second should be mid_priority (500)
@@ -818,7 +841,7 @@ static void test_add_handler_script_priority_sorting(void) {
   }
   lua_pushstring(L, "name");
   lua_gettable(L, -2);
-  TEST_CHECK(strcmp(lua_tostring(L, -1), "ex:mid_priority") == 0);
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "mid_priority") == 0);
   lua_pop(L, 2);
 
   // Third should be low_priority (1000)
@@ -830,7 +853,7 @@ static void test_add_handler_script_priority_sorting(void) {
   }
   lua_pushstring(L, "name");
   lua_gettable(L, -2);
-  TEST_CHECK(strcmp(lua_tostring(L, -1), "ex:low_priority") == 0);
+  TEST_CHECK(strcmp(lua_tostring(L, -1), "low_priority") == 0);
   lua_pop(L, 2);
 
   lua_pop(L, 1); // pop entrypoint
@@ -846,25 +869,31 @@ static void test_add_handler_script_invalid_args(void) {
   }
 
   // Test with NULL context
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(NULL, "name", "return {}", 9, &err),
-                   &err,
-                   ov_error_type_generic,
-                   ov_error_generic_invalid_argument);
-
-  // Test with NULL name (before setup - should fail with invalid_argument)
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, NULL, "return {}", 9, &err),
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(NULL, "return {}", 9, "test://source", &err),
                    &err,
                    ov_error_type_generic,
                    ov_error_generic_invalid_argument);
 
   // Test with NULL script (before setup - should fail with invalid_argument)
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "name", NULL, 0, &err),
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, NULL, 0, "test://source", &err),
+                   &err,
+                   ov_error_type_generic,
+                   ov_error_generic_invalid_argument);
+
+  // Test with NULL source (before setup - should fail with invalid_argument)
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "return {}", 9, NULL, &err),
+                   &err,
+                   ov_error_type_generic,
+                   ov_error_generic_invalid_argument);
+
+  // Test with empty source (before setup - should fail with invalid_argument)
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "return {}", 9, "", &err),
                    &err,
                    ov_error_type_generic,
                    ov_error_generic_invalid_argument);
 
   // Test before setup (entrypoint_ref == LUA_NOREF - should fail with invalid_argument)
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "name", "return {}", 9, &err),
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "return {}", 9, "test://source", &err),
                    &err,
                    ov_error_type_generic,
                    ov_error_generic_invalid_argument);
@@ -877,14 +906,15 @@ static void test_add_handler_script_invalid_args(void) {
 
   // Test with script that doesn't return a table
   char const script_not_table[] = "return 'not a table'";
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "name", script_not_table, sizeof(script_not_table) - 1, &err),
-                   &err,
-                   ov_error_type_generic,
-                   ov_error_generic_fail);
+  TEST_FAILED_WITH(
+      gcmz_lua_add_handler_script(ctx, script_not_table, sizeof(script_not_table) - 1, "test://source", &err),
+      &err,
+      ov_error_type_generic,
+      ov_error_generic_fail);
 
   // Test with invalid Lua syntax
   char const script_invalid[] = "invalid lua code }";
-  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, "name", script_invalid, sizeof(script_invalid) - 1, &err),
+  TEST_FAILED_WITH(gcmz_lua_add_handler_script(ctx, script_invalid, sizeof(script_invalid) - 1, "test://source", &err),
                    &err,
                    ov_error_type_generic,
                    ov_error_generic_fail);
@@ -968,6 +998,8 @@ static void test_plugin_loading_all_types(void) {
   struct ov_error err = {0};
   lua_State *L = NULL;
 
+  clear_debug_messages();
+
   if (!TEST_SUCCEEDED(gcmz_lua_create(&ctx, &err), &err)) {
     return;
   }
@@ -978,6 +1010,7 @@ static void test_plugin_loading_all_types(void) {
                                      },
                                      &err),
                       &err)) {
+    clear_debug_messages();
     gcmz_lua_destroy(&ctx);
     return;
   }
@@ -1061,6 +1094,7 @@ static void test_plugin_loading_all_types(void) {
     }
   }
 
+  clear_debug_messages();
   gcmz_lua_destroy(&ctx);
 }
 
@@ -1082,6 +1116,7 @@ static void test_handler_script_integration(void) {
   {
     char const script[] = "_TEST_HANDLER_CALLS = { drag_enter = 0, drop = 0, drag_leave = 0 }\n"
                           "return {\n"
+                          "  name = 'tracking_handler',\n"
                           "  priority = 100,\n"
                           "  drag_enter = function(files, state)\n"
                           "    _TEST_HANDLER_CALLS.drag_enter = _TEST_HANDLER_CALLS.drag_enter + 1\n"
@@ -1095,7 +1130,8 @@ static void test_handler_script_integration(void) {
                           "  end\n"
                           "}\n";
 
-    if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, "tracking_handler", script, sizeof(script) - 1, &err), &err)) {
+    if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, script, sizeof(script) - 1, "test://tracking_handler", &err),
+                        &err)) {
       goto cleanup;
     }
   }
@@ -1147,6 +1183,68 @@ cleanup:
   gcmz_lua_destroy(&ctx);
 }
 
+// Test error reporting in load_handlers
+static void test_load_handlers_error_reporting(void) {
+  struct gcmz_lua_context *ctx = NULL;
+  struct ov_error err = {0};
+
+  // Create context with test API callback
+  if (!TEST_SUCCEEDED(gcmz_lua_create(&ctx, &err), &err)) {
+    return;
+  }
+  if (!TEST_SUCCEEDED(gcmz_lua_setup(ctx,
+                                     &(struct gcmz_lua_options){
+                                         .script_dir = LUA_SRC_DIR,
+                                         .api_register_callback = test_api_register_callback,
+                                     },
+                                     &err),
+                      &err)) {
+    goto cleanup;
+  }
+
+  // Test 1: Handler that returns non-table value
+  // Now returns an error instead of just logging a debug message
+  {
+    char const script[] = "return 'not a table'";
+    bool const r = gcmz_lua_add_handler_script(ctx, script, sizeof(script) - 1, "test://not_table", &err);
+    TEST_CHECK(!r);
+    TEST_MSG("Expected failure when handler returns non-table value");
+    char *errmsg = NULL;
+    ov_error_to_string(&err, &errmsg, false, NULL);
+    TEST_CHECK(errmsg != NULL && strstr(errmsg, "handler script must return a table") != NULL);
+    TEST_MSG("Expected error message about non-table return, got: %s", errmsg ? errmsg : "(null)");
+    OV_ARRAY_DESTROY(&errmsg);
+    OV_ERROR_DESTROY(&err);
+  }
+
+  // Test 2: Handler table without name field
+  // Now returns an error instead of just logging a debug message
+  {
+    char const script[] = "return { priority = 100 }";
+    bool const r = gcmz_lua_add_handler_script(ctx, script, sizeof(script) - 1, "test://no_name", &err);
+    TEST_CHECK(!r);
+    TEST_MSG("Expected failure when handler table has no name field");
+    char *errmsg = NULL;
+    ov_error_to_string(&err, &errmsg, false, NULL);
+    TEST_CHECK(errmsg != NULL && strstr(errmsg, "handler must have a name") != NULL);
+    TEST_MSG("Expected error message about missing name field, got: %s", errmsg ? errmsg : "(null)");
+    OV_ARRAY_DESTROY(&errmsg);
+    OV_ERROR_DESTROY(&err);
+  }
+
+  // Test 3: Valid handler should succeed
+  {
+    char const script[] = "return { name = 'valid_handler' }";
+    if (!TEST_SUCCEEDED(gcmz_lua_add_handler_script(ctx, script, sizeof(script) - 1, "test://valid", &err), &err)) {
+      goto cleanup;
+    }
+  }
+
+cleanup:
+  clear_debug_messages();
+  gcmz_lua_destroy(&ctx);
+}
+
 TEST_LIST = {
     {"create_destroy", test_create_destroy},
     {"standard_libraries", test_standard_libraries},
@@ -1169,5 +1267,6 @@ TEST_LIST = {
     {"package_path_init_lua_style", test_package_path_init_lua_style},
     {"plugin_loading_all_types", test_plugin_loading_all_types},
     {"handler_script_integration", test_handler_script_integration},
+    {"load_handlers_error_reporting", test_load_handlers_error_reporting},
     {NULL, NULL},
 };

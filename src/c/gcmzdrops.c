@@ -852,6 +852,14 @@ static bool create_external_api(struct gcmzdrops *const ctx, bool const use_retr
   }
 }
 
+static bool enum_handlers_callback(void *callback_context,
+                                   gcmz_config_dialog_handler_enum_fn fn,
+                                   void *userdata,
+                                   struct ov_error *err) {
+  struct gcmz_lua_context *lua_ctx = (struct gcmz_lua_context *)callback_context;
+  return gcmz_lua_enum_handlers(lua_ctx, fn, userdata, err);
+}
+
 void gcmzdrops_show_config_dialog(struct gcmzdrops *const ctx, void *const hwnd, void *const dll_hinst) {
   (void)dll_hinst;
   if (!ctx) {
@@ -863,7 +871,7 @@ void gcmzdrops_show_config_dialog(struct gcmzdrops *const ctx, void *const hwnd,
   bool success = false;
 
   {
-    if (!gcmz_config_dialog_show(ctx->config, (HWND)hwnd, running, &err)) {
+    if (!gcmz_config_dialog_show(ctx->config, enum_handlers_callback, ctx->lua_ctx, (HWND)hwnd, running, &err)) {
       OV_ERROR_ADD_TRACE(&err);
       goto cleanup;
     }

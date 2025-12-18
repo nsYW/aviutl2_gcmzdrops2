@@ -5,6 +5,7 @@
 
 #include <commctrl.h>
 #include <shlobj.h>
+#include <uxtheme.h>
 
 #include <ovarray.h>
 #include <ovmo.h>
@@ -20,6 +21,8 @@
 #include "gcmz_types.h"
 
 enum {
+  id_tab_control = 100,
+
   id_group_save_destination = 200,
   id_label_save_description = 201,
   id_label_processing_mode = 202,
@@ -43,16 +46,26 @@ enum {
 
   id_group_debug = 400,
   id_check_show_debug_menu = 401,
+
+  id_list_handlers = 500,
+};
+
+enum {
+  tab_index_settings = 0,
+  tab_index_handlers = 1,
 };
 
 static NATIVE_CHAR const g_config_dialog_prop_name[] = L"GCMZConfigDialogData";
 
 struct dialog_data {
   struct gcmz_config *config;
+  gcmz_config_dialog_enum_handlers_fn enum_handlers;
+  void *enum_handlers_context;
   struct config_dialog_tooltip *tooltip;
   struct config_dialog_combo_tooltip *combo_tooltip;
   bool external_api_running;
   HFONT dialog_font;
+  int current_tab;
 };
 
 static char const *get_processing_mode_tooltip(int index, void *userdata) {
@@ -256,6 +269,9 @@ static void set_dialog_font(HWND hwnd, HFONT hfont) {
 static INT_PTR init_dialog(HWND dialog, struct dialog_data *data) {
   SetPropW(dialog, g_config_dialog_prop_name, data);
 
+  // Enable visual styles for tab control background
+  EnableThemeDialogTexture(dialog, ETDT_ENABLETAB);
+
   static wchar_t const ph[] = L"%1$s";
   struct ov_error err = {0};
   WCHAR buf[256];
@@ -404,8 +420,183 @@ static INT_PTR init_dialog(HWND dialog, struct dialog_data *data) {
     }
   }
 
+  // Initialize tab control
+  {
+    HWND tab = GetDlgItem(dialog, id_tab_control);
+    TCITEMW item = {0};
+    item.mask = TCIF_TEXT;
+
+    ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("Settings"));
+    item.pszText = buf;
+    SendMessageW(tab, TCM_INSERTITEMW, (WPARAM)tab_index_settings, (LPARAM)&item);
+
+    ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("Handlers"));
+    item.pszText = buf;
+    SendMessageW(tab, TCM_INSERTITEMW, (WPARAM)tab_index_handlers, (LPARAM)&item);
+
+    data->current_tab = tab_index_settings;
+  }
+
+  // Initialize handlers list view
+  {
+    HWND list = GetDlgItem(dialog, id_list_handlers);
+    SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+    LVCOLUMNW col = {0};
+    col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+
+    ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("Name"));
+    col.pszText = buf;
+    col.cx = 120;
+    col.iSubItem = 0;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&col);
+
+    ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("Priority"));
+    col.pszText = buf;
+    col.cx = 60;
+    col.iSubItem = 1;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&col);
+
+    ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, gettext("Source"));
+    col.pszText = buf;
+    col.cx = 150;
+    col.iSubItem = 2;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 2, (LPARAM)&col);
+
+    // Hide handlers list initially (Settings tab is shown first)
+    ShowWindow(list, SW_HIDE);
+  }
+
   update_path_buttons_state(dialog);
   return TRUE;
+}
+
+// Settings tab controls (shown/hidden when switching tabs)
+static int const settings_tab_controls[] = {
+    id_group_save_destination,
+    id_label_save_description,
+    id_label_processing_mode,
+    id_combo_processing_mode,
+    id_label_folder,
+    id_edit_new_path,
+    id_button_browse,
+    id_list_save_paths,
+    id_button_add_path,
+    id_button_move_up,
+    id_button_move_down,
+    id_button_remove_path,
+    id_check_create_directories,
+    id_group_external_api,
+    id_check_enable_external_api,
+    id_label_external_api_status,
+    id_group_debug,
+    id_check_show_debug_menu,
+};
+
+// Handlers tab controls (shown/hidden when switching tabs)
+static int const handlers_tab_controls[] = {
+    id_list_handlers,
+};
+
+static void show_tab_controls(HWND dialog, int const *controls, size_t count, int show_cmd) {
+  for (size_t i = 0; i < count; i++) {
+    HWND h = GetDlgItem(dialog, controls[i]);
+    if (h) {
+      ShowWindow(h, show_cmd);
+    }
+  }
+}
+
+struct handler_enum_context {
+  HWND list;
+  int index;
+};
+
+static bool handler_enum_callback(char const *name, int priority, char const *source, void *userdata) {
+  struct handler_enum_context *ctx = (struct handler_enum_context *)userdata;
+  if (!ctx || !ctx->list) {
+    return false;
+  }
+
+  WCHAR name_w[256] = {0};
+  WCHAR priority_w[32] = {0};
+  WCHAR source_w[MAX_PATH] = {0};
+
+  ov_utf8_to_wchar(name, strlen(name), name_w, sizeof(name_w) / sizeof(name_w[0]) - 1, NULL);
+  ov_snprintf_wchar(priority_w, sizeof(priority_w) / sizeof(priority_w[0]), L"%d", L"%d", priority);
+  ov_utf8_to_wchar(source, strlen(source), source_w, sizeof(source_w) / sizeof(source_w[0]) - 1, NULL);
+
+  LVITEMW item = {0};
+  item.mask = LVIF_TEXT;
+  item.iItem = ctx->index;
+  item.iSubItem = 0;
+  item.pszText = name_w;
+  SendMessageW(ctx->list, LVM_INSERTITEMW, 0, (LPARAM)&item);
+
+  LVITEMW subitem = {0};
+  subitem.mask = LVIF_TEXT;
+  subitem.iItem = ctx->index;
+  subitem.iSubItem = 1;
+  subitem.pszText = priority_w;
+  SendMessageW(ctx->list, LVM_SETITEMTEXTW, (WPARAM)ctx->index, (LPARAM)&subitem);
+
+  subitem.iSubItem = 2;
+  subitem.pszText = source_w;
+  SendMessageW(ctx->list, LVM_SETITEMTEXTW, (WPARAM)ctx->index, (LPARAM)&subitem);
+
+  ctx->index++;
+  return true;
+}
+
+static void populate_handlers_list(HWND dialog, struct dialog_data *data) {
+  HWND list = GetDlgItem(dialog, id_list_handlers);
+  if (!list) {
+    return;
+  }
+
+  SendMessageW(list, LVM_DELETEALLITEMS, 0, 0);
+
+  if (!data->enum_handlers) {
+    return;
+  }
+
+  struct ov_error err = {0};
+  struct handler_enum_context ctx = {
+      .list = list,
+      .index = 0,
+  };
+
+  if (!data->enum_handlers(data->enum_handlers_context, handler_enum_callback, &ctx, &err)) {
+    OV_ERROR_REPORT(&err, NULL);
+  }
+}
+
+static void switch_tab(HWND dialog, struct dialog_data *data, int new_tab) {
+  if (data->current_tab == new_tab) {
+    return;
+  }
+
+  // Hide current tab controls
+  if (data->current_tab == tab_index_settings) {
+    show_tab_controls(
+        dialog, settings_tab_controls, sizeof(settings_tab_controls) / sizeof(settings_tab_controls[0]), SW_HIDE);
+  } else if (data->current_tab == tab_index_handlers) {
+    show_tab_controls(
+        dialog, handlers_tab_controls, sizeof(handlers_tab_controls) / sizeof(handlers_tab_controls[0]), SW_HIDE);
+  }
+
+  // Show new tab controls
+  if (new_tab == tab_index_settings) {
+    show_tab_controls(
+        dialog, settings_tab_controls, sizeof(settings_tab_controls) / sizeof(settings_tab_controls[0]), SW_SHOW);
+  } else if (new_tab == tab_index_handlers) {
+    show_tab_controls(
+        dialog, handlers_tab_controls, sizeof(handlers_tab_controls) / sizeof(handlers_tab_controls[0]), SW_SHOW);
+    // Populate the handlers list when switching to this tab
+    populate_handlers_list(dialog, data);
+  }
+
+  data->current_tab = new_tab;
 }
 
 static INT_PTR click_add_path(HWND dialog) {
@@ -844,6 +1035,18 @@ static INT_PTR CALLBACK dialog_proc(HWND dialog, UINT message, WPARAM wParam, LP
     }
     break;
 
+  case WM_NOTIFY: {
+    NMHDR *nmhdr = (NMHDR *)lParam;
+    if (nmhdr->idFrom == id_tab_control && nmhdr->code == TCN_SELCHANGE) {
+      HWND tab = GetDlgItem(dialog, id_tab_control);
+      int new_tab = (int)SendMessageW(tab, TCM_GETCURSEL, 0, 0);
+      if (data) {
+        switch_tab(dialog, data, new_tab);
+      }
+      return TRUE;
+    }
+  } break;
+
   case WM_DESTROY:
     if (data) {
       config_dialog_tooltip_destroy(&data->tooltip);
@@ -863,7 +1066,23 @@ static INT_PTR CALLBACK dialog_proc(HWND dialog, UINT message, WPARAM wParam, LP
   return FALSE;
 }
 
+static HANDLE create_activation_context_for_comctl32(void) {
+  ACTCTXW actctx = {
+      .cbSize = sizeof(ACTCTXW),
+      .dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID,
+      .lpResourceName = MAKEINTRESOURCEW(1),
+      .hModule = NULL,
+  };
+  if (!ovl_os_get_hinstance_from_fnptr(
+          (void *)create_activation_context_for_comctl32, (void **)&actctx.hModule, NULL)) {
+    return INVALID_HANDLE_VALUE;
+  }
+  return CreateActCtxW(&actctx);
+}
+
 bool gcmz_config_dialog_show(struct gcmz_config *config,
+                             gcmz_config_dialog_enum_handlers_fn enum_handlers,
+                             void *enum_handlers_context,
                              void *parent_window,
                              bool const external_api_running,
                              struct ov_error *const err) {
@@ -878,15 +1097,31 @@ bool gcmz_config_dialog_show(struct gcmz_config *config,
   struct dialog_data data = {0};
   bool result = false;
   void *hinstance = NULL;
+  HANDLE hActCtx = INVALID_HANDLE_VALUE;
+  ULONG_PTR cookie = 0;
+  bool activated = false;
 
   {
     data.config = config;
+    data.enum_handlers = enum_handlers;
+    data.enum_handlers_context = enum_handlers_context;
     data.external_api_running = external_api_running;
 
     if (!ovl_os_get_hinstance_from_fnptr((void *)gcmz_config_dialog_show, &hinstance, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
     }
+
+    hActCtx = create_activation_context_for_comctl32();
+    if (hActCtx == INVALID_HANDLE_VALUE) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+    if (!ActivateActCtx(hActCtx, &cookie)) {
+      OV_ERROR_SET_HRESULT(err, HRESULT_FROM_WIN32(GetLastError()));
+      goto cleanup;
+    }
+    activated = true;
 
     INT_PTR dialog_result =
         DialogBoxParamW((HINSTANCE)hinstance, L"GCMZCONFIGDIALOG", (HWND)parent_window, dialog_proc, (LPARAM)&data);
@@ -899,5 +1134,11 @@ bool gcmz_config_dialog_show(struct gcmz_config *config,
   result = true;
 
 cleanup:
+  if (activated) {
+    DeactivateActCtx(0, cookie);
+  }
+  if (hActCtx != INVALID_HANDLE_VALUE) {
+    ReleaseActCtx(hActCtx);
+  }
   return result;
 }

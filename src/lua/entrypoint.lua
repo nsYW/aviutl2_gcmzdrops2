@@ -10,88 +10,105 @@ local modules = {}
 --- Sort modules by priority (ascending order)
 -- @local
 local function sort_modules(a, b)
-  return a.module.priority < b.module.priority
+  return a.priority < b.priority
 end
 
 --- Register a module to the module list.
--- @param name string Module name for identification
--- @param module_table table The module table
--- @return boolean true on success (including skip for non-handler modules)
+-- @param module_table table The module table (must have name field)
+-- @param source string Source path of the module (file path or module origin, required)
+-- @return boolean, string true on success, or false and error message on failure
 -- @local
-local function register_module(name, module_table)
-  if type(module_table) ~= "table" then
-    return false
+local function register_module(module_table, source)
+  -- source is required
+  if type(source) ~= "string" or source == "" then
+    return false, "handler source path is required"
   end
+  if type(module_table) ~= "table" then
+    return false, "handler script must return a table"
+  end
+  -- name is required
+  local name = module_table.name
+  if type(name) ~= "string" or name == "" then
+    return false, "handler must have a name field"
+  end
+  -- priority defaults to 1000 if not specified
   local priority = module_table.priority
   if type(priority) ~= "number" then
-    -- Not a handler module (no priority), skip silently
-    return true
+    priority = 1000
   end
   table.insert(modules, {
     name = name,
+    priority = priority,
     module = module_table,
+    source = source,
     active = true,
   })
-  return true
+  return true, nil
 end
 
---- Load handler modules from a list of module names.
--- Called from C side with the list of module names in the script directory.
+--- Load handler modules from a list of module info.
+-- Called from C side with the list of module info in the script directory.
 -- Loads all modules using require, registers them, and sorts by priority.
--- @param modnames table Array of module names (without extension)
-function M.load_handlers(modnames)
-  if type(modnames) ~= "table" then
+-- @param modinfo table Array of { name = "modname", path = "filepath" }
+function M.load_handlers(modinfo)
+  if type(modinfo) ~= "table" then
     return
   end
-  for _, modname in ipairs(modnames) do
-    local ok, module_table = pcall(require, modname)
-    if not ok then
-      debug_print("failed to load handler: " .. modname .. ": " .. tostring(module_table))
-    elseif not register_module(modname, module_table) then
-      debug_print("handler must return a table: " .. modname)
+  for _, info in ipairs(modinfo) do
+    local modname = info.name
+    local modpath = info.path
+    if type(modname) ~= "string" or modname == "" then
+      debug_print("handler module name is invalid")
+    elseif type(modpath) ~= "string" or modpath == "" then
+      debug_print("handler source path is required: " .. modname)
+    else
+      local ok, result = pcall(require, modname)
+      if not ok then
+        debug_print("failed to load handler: " .. modname .. ": " .. tostring(result))
+      else
+        local registered, err = register_module(result, modpath)
+        if not registered then
+          debug_print(err .. ": " .. modname)
+        end
+      end
     end
   end
   table.sort(modules, sort_modules)
 end
 
 --- Add a handler module from a table.
--- Checks for priority field and registers the module if valid.
--- @param name string Module name for identification
--- @param module_table table The module table returned by the script
--- @return boolean true on success (including skip for non-handler modules)
+-- Checks for name field and registers the module if valid.
+-- @param module_table table The module table returned by the script (must have name field)
+-- @param source string Source path of the module
+-- @return boolean, string true on success, or false and error message on failure
 -- @local
-local function add_module(name, module_table)
-  if type(name) ~= "string" then
-    return false
-  end
-  if not register_module(name, module_table) then
-    return false
+local function add_module(module_table, source)
+  local ok, err = register_module(module_table, source)
+  if not ok then
+    return false, err
   end
   table.sort(modules, sort_modules)
-  return true
+  return true, nil
 end
 
 --- Add a handler module from a script string.
 -- Loads and executes the script, then registers it as a module if valid.
--- @param name string Module name for identification (also used as chunk name)
 -- @param script string The script content to execute
+-- @param source string Source path indicating the caller (module path or empty)
 -- @return boolean, string true on success, or false and error message on failure
-function M.add_module_from_string(name, script)
-  if type(name) ~= "string" or type(script) ~= "string" then
-    return false, "invalid arguments"
+function M.add_module_from_string(script, source)
+  if type(source) ~= "string" or source == "" then
+    return false, "handler source path is required"
   end
-  local chunk, err = loadstring(script, name)
+  local chunk, err = loadstring(script, source)
   if not chunk then
     return false, err
   end
-  local ok, module_table = pcall(chunk)
+  local ok, result = pcall(chunk)
   if not ok then
-    return false, module_table
+    return false, result
   end
-  if type(module_table) ~= "table" then
-    return false, "handler script must return a table"
-  end
-  return add_module("ex:" .. name, module_table), nil
+  return add_module(result, source)
 end
 
 --- Add a handler module from a file.
@@ -106,14 +123,11 @@ function M.add_module_from_file(filepath)
   if not chunk then
     return false, err
   end
-  local ok, module_table = pcall(chunk)
+  local ok, result = pcall(chunk)
   if not ok then
-    return false, module_table
+    return false, result
   end
-  if type(module_table) ~= "table" then
-    return false, "handler script must return a table"
-  end
-  return add_module("ex:@" .. filepath, module_table), nil
+  return add_module(result, filepath)
 end
 
 --- Get the number of registered modules.
@@ -129,6 +143,18 @@ end
 -- @return table|nil The module entry or nil if out of range
 function M.get_module(index)
   return modules[index]
+end
+
+--- Enumerate all registered modules.
+-- Calls the callback function for each registered handler module.
+-- @param fn function Callback function(name, priority, source) called for each module
+function M.enum_modules(fn)
+  if type(fn) ~= "function" then
+    return
+  end
+  for _, entry in ipairs(modules) do
+    fn(entry.name, entry.priority, entry.source)
+  end
 end
 
 --- Call drag_enter hook on all loaded modules in priority order.

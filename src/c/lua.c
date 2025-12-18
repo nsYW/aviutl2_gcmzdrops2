@@ -473,6 +473,7 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
   size_t script_dir_len = wcslen(script_dir);
   wchar_t *filepath = NULL;
   char *utf8_path = NULL;
+  char *utf8_modname = NULL;
   HANDLE find_handle = INVALID_HANDLE_VALUE;
   bool result = false;
   int file_count = 0;
@@ -493,7 +494,7 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
     }
     lua_remove(L, -2); // Remove entrypoint, keep function
 
-    // Create table for file paths
+    // Create table for module info: { { name = "modname", path = "filepath" }, ... }
     lua_newtable(L);
 
     // MAX_PATH is enough to avoid unnecessary reallocs
@@ -518,11 +519,11 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
       goto cleanup;
     }
 
-    static wchar_t const init_lua_suffix[] = L"\\init.lua";
-
     do {
       // Skip . and ..
-      if (wcscmp(find_data.cFileName, L".") == 0 || wcscmp(find_data.cFileName, L"..") == 0) {
+      if (wcscmp(find_data.cFileName, L".") == 0 || wcscmp(find_data.cFileName, L"..") == 0 ||
+          wcscmp(find_data.cFileName, L"entrypoint.lua") == 0 || wcscmp(find_data.cFileName, L"exo.lua") == 0 ||
+          wcscmp(find_data.cFileName, L"ini.lua") == 0 || wcscmp(find_data.cFileName, L"json.lua") == 0) {
         continue;
       }
 
@@ -531,8 +532,8 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
       if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         // For directories, check for init.lua
         // Build: script_dir\dirname\init.lua
-        size_t const dir_path_len = script_dir_len + 1 + filename_len;
-        size_t const init_path_len = dir_path_len + sizeof(init_lua_suffix) / sizeof(wchar_t);
+        static wchar_t const init_lua_suffix[] = L"\\init.lua";
+        size_t const init_path_len = script_dir_len + 1 + filename_len + sizeof(init_lua_suffix) / sizeof(wchar_t);
         if (!OV_ARRAY_GROW(&filepath, init_path_len)) {
           OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
           goto cleanup;
@@ -540,43 +541,67 @@ static bool setup_plugin_loading(struct gcmz_lua_context *ctx, wchar_t const *sc
         wcscpy(filepath, script_dir);
         filepath[script_dir_len] = L'\\';
         wcscpy(filepath + script_dir_len + 1, find_data.cFileName);
-        wcscpy(filepath + dir_path_len, init_lua_suffix);
+        wcscpy(filepath + script_dir_len + 1 + filename_len, init_lua_suffix);
         DWORD const attrs = GetFileAttributesW(filepath);
-        if ((attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        if ((attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) { // found init.lua
+          // Convert full path for source
           if (!gcmz_wchar_to_utf8(filepath, &utf8_path, err)) {
             OV_ERROR_ADD_TRACE(err);
             goto cleanup;
           }
+          // Module name is the directory name
+          if (!gcmz_wchar_to_utf8(find_data.cFileName, &utf8_modname, err)) {
+            OV_ERROR_ADD_TRACE(err);
+            goto cleanup;
+          }
+          // Create { name = "modname", path = "filepath" }
+          lua_newtable(L);
+          lua_pushstring(L, utf8_modname);
+          lua_setfield(L, -2, "name");
           lua_pushstring(L, utf8_path);
+          lua_setfield(L, -2, "path");
           lua_rawseti(L, -2, ++file_count);
         }
       } else {
         // For files, check for .lua or .dll extension
-        bool is_lua = (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".lua"));
-        bool is_dll = (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".dll"));
-
+        bool const is_lua =
+            (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".lua"));
+        bool const is_dll =
+            (filename_len > 4 && gcmz_extension_equals(find_data.cFileName + filename_len - 4, L".dll"));
         if (!is_lua && !is_dll) {
           continue;
         }
 
-        // Extract module name (filename without extension)
-        size_t const modname_len = filename_len - 4; // Remove .lua or .dll
-        if (!OV_ARRAY_GROW(&filepath, modname_len + 1)) {
+        // Build full path: script_dir\filename
+        size_t const full_path_len = script_dir_len + 1 + filename_len + 1;
+        if (!OV_ARRAY_GROW(&filepath, full_path_len)) {
           OV_ERROR_SET_GENERIC(err, ov_error_generic_out_of_memory);
           goto cleanup;
         }
-        wcsncpy(filepath, find_data.cFileName, modname_len);
-        filepath[modname_len] = L'\0';
+        wcscpy(filepath, script_dir);
+        filepath[script_dir_len] = L'\\';
+        wcscpy(filepath + script_dir_len + 1, find_data.cFileName);
         if (!gcmz_wchar_to_utf8(filepath, &utf8_path, err)) {
           OV_ERROR_ADD_TRACE(err);
           goto cleanup;
         }
+        // Extract module name (filename without extension)
+        filepath[script_dir_len + 1 + filename_len - 4] = L'\0'; // Remove .lua or .dll
+        if (!gcmz_wchar_to_utf8(filepath + script_dir_len + 1, &utf8_modname, err)) {
+          OV_ERROR_ADD_TRACE(err);
+          goto cleanup;
+        }
+        // Create { name = "modname", path = "filepath" }
+        lua_newtable(L);
+        lua_pushstring(L, utf8_modname);
+        lua_setfield(L, -2, "name");
         lua_pushstring(L, utf8_path);
+        lua_setfield(L, -2, "path");
         lua_rawseti(L, -2, ++file_count);
       }
     } while (FindNextFileW(find_handle, &find_data));
 
-    // Call load_handlers(filepaths)
+    // Call load_handlers(modinfo)
     if (!gcmz_lua_pcall(L, 1, 0, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
@@ -595,6 +620,9 @@ cleanup:
   }
   if (utf8_path) {
     OV_ARRAY_DESTROY(&utf8_path);
+  }
+  if (utf8_modname) {
+    OV_ARRAY_DESTROY(&utf8_modname);
   }
   return result;
 }
@@ -963,11 +991,11 @@ cleanup:
 }
 
 NODISCARD bool gcmz_lua_add_handler_script(struct gcmz_lua_context *const ctx,
-                                           char const *const name,
                                            char const *const script,
                                            size_t const script_len,
+                                           char const *const source,
                                            struct ov_error *const err) {
-  if (!ctx || !ctx->L || !name || !script || !script_len || ctx->entrypoint_ref == LUA_NOREF) {
+  if (!ctx || !ctx->L || !script || !script_len || !source || !*source || ctx->entrypoint_ref == LUA_NOREF) {
     OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
     return false;
   }
@@ -977,12 +1005,12 @@ NODISCARD bool gcmz_lua_add_handler_script(struct gcmz_lua_context *const ctx,
   bool result = false;
 
   {
-    // Call entrypoint.add_module_from_string(name, script)
+    // Call entrypoint.add_module_from_string(script, source)
     lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->entrypoint_ref);
     lua_getfield(L, -1, "add_module_from_string");
     lua_remove(L, -2); // Remove entrypoint, keep function
-    lua_pushstring(L, name);
     lua_pushlstring(L, script, script_len);
+    lua_pushstring(L, source);
     if (!gcmz_lua_pcall(L, 2, 2, err)) {
       OV_ERROR_ADD_TRACE(err);
       goto cleanup;
@@ -1048,5 +1076,83 @@ cleanup:
   if (utf8_path) {
     OV_ARRAY_DESTROY(&utf8_path);
   }
+  return result;
+}
+
+/**
+ * @brief Callback wrapper for enum_modules Lua call
+ */
+struct enum_handlers_context {
+  gcmz_lua_handler_enum_callback callback;
+  void *userdata;
+  bool continue_enum;
+};
+
+static int enum_handlers_callback(lua_State *L) {
+  struct enum_handlers_context *ctx = (struct enum_handlers_context *)lua_touserdata(L, lua_upvalueindex(1));
+  if (!ctx || !ctx->callback || !ctx->continue_enum) {
+    return 0;
+  }
+
+  char const *name = lua_isstring(L, 1) ? lua_tostring(L, 1) : "";
+  lua_Number const priority_num = lua_isnumber(L, 2) ? lua_tonumber(L, 2) : 0.0;
+  int const priority = (int)priority_num;
+  char const *source = lua_isstring(L, 3) ? lua_tostring(L, 3) : "";
+
+  if (!ctx->callback(name, priority, source, ctx->userdata)) {
+    ctx->continue_enum = false;
+  }
+  return 0;
+}
+
+NODISCARD bool gcmz_lua_enum_handlers(struct gcmz_lua_context const *const ctx,
+                                      gcmz_lua_handler_enum_callback callback,
+                                      void *userdata,
+                                      struct ov_error *const err) {
+  if (!ctx || !ctx->L || !callback || ctx->entrypoint_ref == LUA_NOREF) {
+    OV_ERROR_SET_GENERIC(err, ov_error_generic_invalid_argument);
+    return false;
+  }
+
+  lua_State *L = ctx->L;
+  int base_top = lua_gettop(L);
+  bool result = false;
+
+  {
+    // Call entrypoint.enum_modules(callback_fn)
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->entrypoint_ref);
+    if (!lua_istable(L, -1)) {
+      lua_pop(L, 1);
+      OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
+      goto cleanup;
+    }
+    lua_getfield(L, -1, "enum_modules");
+    if (!lua_isfunction(L, -1)) {
+      lua_pop(L, 2);
+      OV_ERROR_SET_GENERIC(err, ov_error_generic_unexpected);
+      goto cleanup;
+    }
+    lua_remove(L, -2); // Remove entrypoint, keep function
+
+    // Create C callback as upvalue closure
+    struct enum_handlers_context enum_ctx = {
+        .callback = callback,
+        .userdata = userdata,
+        .continue_enum = true,
+    };
+    lua_pushlightuserdata(L, &enum_ctx);
+    lua_pushcclosure(L, enum_handlers_callback, 1);
+
+    // Call enum_modules(fn)
+    if (!gcmz_lua_pcall(L, 1, 0, err)) {
+      OV_ERROR_ADD_TRACE(err);
+      goto cleanup;
+    }
+  }
+
+  result = true;
+
+cleanup:
+  lua_settop(L, base_top);
   return result;
 }

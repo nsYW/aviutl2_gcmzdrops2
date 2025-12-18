@@ -169,16 +169,16 @@ NODISCARD bool gcmz_lua_call_exo_convert(struct gcmz_lua_context const *const ct
  * This function can be called anytime after gcmz_lua_create, including before full initialization.
  *
  * @param ctx Lua context instance
- * @param name Module name for identification (UTF-8)
- * @param script Lua script string (UTF-8) that returns a module table
+ * @param script Lua script string that returns a module table
  * @param script_len Length of the script in bytes
+ * @param source Source path indicating where the script came from
  * @param err [out] Error information on failure
  * @return true on success, false on failure
  */
 NODISCARD bool gcmz_lua_add_handler_script(struct gcmz_lua_context *const ctx,
-                                           char const *const name,
                                            char const *const script,
                                            size_t const script_len,
+                                           char const *const source,
                                            struct ov_error *const err);
 
 /**
@@ -198,3 +198,31 @@ NODISCARD bool gcmz_lua_add_handler_script(struct gcmz_lua_context *const ctx,
 NODISCARD bool gcmz_lua_add_handler_script_file(struct gcmz_lua_context *const ctx,
                                                 NATIVE_CHAR const *const filepath,
                                                 struct ov_error *const err);
+
+/**
+ * @brief Callback function type for enumerating handler modules
+ *
+ * @param name Handler name (UTF-8)
+ * @param priority Handler priority value
+ * @param source Source path where the handler was registered from (UTF-8)
+ * @param userdata User-defined context
+ * @return true to continue enumeration, false to stop
+ */
+typedef bool (*gcmz_lua_handler_enum_callback)(char const *name, int priority, char const *source, void *userdata);
+
+/**
+ * @brief Enumerate all registered handler modules
+ *
+ * Calls the callback function for each registered handler module.
+ * The callback receives the handler name, priority, and source path.
+ *
+ * @param ctx Lua context instance
+ * @param callback Callback function to call for each handler
+ * @param userdata User-defined context passed to callback
+ * @param err [out] Error information on failure
+ * @return true on success, false on failure
+ */
+NODISCARD bool gcmz_lua_enum_handlers(struct gcmz_lua_context const *const ctx,
+                                      gcmz_lua_handler_enum_callback callback,
+                                      void *userdata,
+                                      struct ov_error *const err);

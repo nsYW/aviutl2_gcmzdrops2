@@ -10,31 +10,33 @@
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 
-GCMZCONFIGDIALOG DIALOGEX 0, 0, 360, 270
+GCMZCONFIGDIALOG DIALOGEX 0, 0, 360, 290
 CAPTION "GCMZDrops Settings"
 STYLE DS_CENTER | DS_MODALFRAME | WS_POPUPWINDOW | WS_CAPTION | WS_VISIBLE
 FONT 9, "Segoe UI", 400, 0, 128
 {
-    DEFPUSHBUTTON "&OK", IDOK, 238, 248, 56, 14
-    PUSHBUTTON "&Cancel", IDCANCEL, 296, 248, 56, 14
-    GROUPBOX "&Save Destination", 200, 8, 2, 344, 174
-    LTEXT "Specifies where to create files when dropping images from the browser, etc.\nIf multiple paths are registered, they will be tried in order from the top.", 201, 16, 14, 328, 16
-    LTEXT "&Processing Mode:", 202, 16, 38, 328, 8
-    COMBOBOX 203, 16, 48, 328, 300, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    LTEXT "&Folder:", 210, 16, 66, 328, 8
-    EDITTEXT 211, 16, 76, 246, 12, ES_AUTOHSCROLL
-    PUSHBUTTON "&Browse...", 212, 262, 76, 32, 12
-    LISTBOX 220, 16, 92, 278, 60, LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "&Add", 221, 296, 76, 48, 12
-    PUSHBUTTON "Move &Up", 222, 296, 92, 48, 12
-    PUSHBUTTON "Move &Down", 223, 296, 104, 48, 12
-    PUSHBUTTON "&Remove", 224, 296, 140, 48, 12
-    AUTOCHECKBOX "&Make directories automatically", 230, 16, 160, 156, 8
-    GROUPBOX "&External API", 300, 8, 180, 344, 28
-    AUTOCHECKBOX "&Enable", 301, 16, 193, 156, 8
-    LTEXT "&Current Status: Running", 302, 180, 193, 164, 8
-    GROUPBOX "&Debug", 400, 8, 212, 344, 28
-    AUTOCHECKBOX "&Show debug menu", 401, 16, 225, 156, 8
+    CONTROL "", 100, "SysTabControl32", 0, 4, 4, 352, 260
+    DEFPUSHBUTTON "&OK", IDOK, 238, 268, 56, 14
+    PUSHBUTTON "&Cancel", IDCANCEL, 296, 268, 56, 14
+    GROUPBOX "&Save Destination", 200, 8, 22, 344, 174
+    LTEXT "Specifies where to create files when dropping images from the browser, etc.\nIf multiple paths are registered, they will be tried in order from the top.", 201, 16, 34, 328, 16
+    LTEXT "&Processing Mode:", 202, 16, 58, 328, 8
+    COMBOBOX 203, 16, 68, 328, 300, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT "&Folder:", 210, 16, 86, 328, 8
+    EDITTEXT 211, 16, 96, 246, 12, ES_AUTOHSCROLL
+    PUSHBUTTON "&Browse...", 212, 262, 96, 32, 12
+    LISTBOX 220, 16, 112, 278, 60, LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "&Add", 221, 296, 96, 48, 12
+    PUSHBUTTON "Move &Up", 222, 296, 112, 48, 12
+    PUSHBUTTON "Move &Down", 223, 296, 124, 48, 12
+    PUSHBUTTON "&Remove", 224, 296, 160, 48, 12
+    AUTOCHECKBOX "&Make directories automatically", 230, 16, 180, 156, 8
+    GROUPBOX "&External API", 300, 8, 200, 344, 28
+    AUTOCHECKBOX "&Enable", 301, 16, 213, 156, 8
+    LTEXT "&Current Status: Running", 302, 180, 213, 164, 8
+    GROUPBOX "&Debug", 400, 8, 232, 344, 28
+    AUTOCHECKBOX "&Show debug menu", 401, 16, 245, 156, 8
+    CONTROL "", 500, "SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 12, 26, 340, 230
 }
 
 #ifdef APSTUDIO_INVOKED

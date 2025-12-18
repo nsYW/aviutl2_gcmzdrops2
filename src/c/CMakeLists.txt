@@ -232,6 +232,7 @@ target_link_libraries(gcmzdrops PRIVATE
   yyjson
   comctl32
   shlwapi
+  uxtheme
 )
 
 set(GCMZ_SCRIPT_DIR "${EXPORT_DIR}/Plugin/${GCMZ_SCRIPT_SUBDIR}")
@@ -436,6 +437,7 @@ target_link_libraries(test_config_dialog PRIVATE
   ovl
   yyjson
   comctl32
+  uxtheme
 )
 add_test(NAME test_config_dialog COMMAND test_config_dialog)
 

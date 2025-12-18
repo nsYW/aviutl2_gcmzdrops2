@@ -5,8 +5,10 @@
 
 static void test_config_dialog_show_with_null_config(void) {
   struct ov_error err = {0};
-  TEST_FAILED_WITH(
-      gcmz_config_dialog_show(NULL, NULL, false, &err), &err, ov_error_type_generic, ov_error_generic_invalid_argument);
+  TEST_FAILED_WITH(gcmz_config_dialog_show(NULL, NULL, NULL, NULL, false, &err),
+                   &err,
+                   ov_error_type_generic,
+                   ov_error_generic_invalid_argument);
 }
 
 static void test_config_dialog_show_with_valid_error(void) {
@@ -16,7 +18,7 @@ static void test_config_dialog_show_with_valid_error(void) {
     return;
   }
 
-  TEST_FAILED_WITH(gcmz_config_dialog_show(config, NULL, false, &err),
+  TEST_FAILED_WITH(gcmz_config_dialog_show(config, NULL, NULL, NULL, false, &err),
                    &err,
                    ov_error_type_hresult,
                    HRESULT_FROM_WIN32(ERROR_RESOURCE_DATA_NOT_FOUND));

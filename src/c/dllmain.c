@@ -9,12 +9,14 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <ovarray.h>
 #include <ovbase.h>
 #include <ovmo.h>
 #include <ovprintf.h>
 #include <ovutf.h>
 
 #include <ovl/os.h>
+#include <ovl/path.h>
 
 #include <aviutl2_logger2.h>
 #include <aviutl2_plugin2.h>
@@ -161,31 +163,70 @@ void __declspec(dllexport) RegisterPlugin(struct aviutl2_host_app_table *host) {
   gcmzdrops_register(g_gcmzdrops, host);
 }
 
-bool __declspec(dllexport) AddHandlerScript(char const *const name, char const *const script, size_t const script_len);
-bool __declspec(dllexport) AddHandlerScript(char const *const name, char const *const script, size_t const script_len) {
-  if (!name || !script) {
+bool __declspec(dllexport) AddHandlerScript(char const *const script, size_t const script_len);
+bool __declspec(dllexport) AddHandlerScript(char const *const script, size_t const script_len) {
+  if (!script) {
     return false;
   }
 
   struct ov_error err = {0};
+  void *hinst = NULL;
+  wchar_t *module_path = NULL;
+  char *module_path_utf8 = NULL;
   bool result = false;
 
-  struct gcmz_lua_context *const lua = get_lua(&err);
-  if (!lua) {
-    OV_ERROR_ADD_TRACE(&err);
-    goto cleanup;
+  {
+    // Get caller's module path using return address
+    void *const return_addr = __builtin_return_address(0);
+    if (!return_addr) {
+      OV_ERROR_SET(&err, ov_error_type_generic, ov_error_generic_fail, "failed to get return address");
+      goto cleanup;
+    }
+    if (!ovl_os_get_hinstance_from_fnptr(return_addr, &hinst, &err)) {
+      OV_ERROR_PUSH(&err, ov_error_type_generic, ov_error_generic_fail, "failed to get caller module instance");
+      goto cleanup;
+    }
+    if (!ovl_path_get_module_name(&module_path, hinst, &err)) {
+      OV_ERROR_PUSH(&err, ov_error_type_generic, ov_error_generic_fail, "failed to get caller module path");
+      goto cleanup;
+    }
+    size_t const len = ov_wchar_to_utf8_len(module_path, OV_ARRAY_LENGTH(module_path));
+    if (!OV_ARRAY_GROW(&module_path_utf8, len + 1)) {
+      OV_ERROR_SET_GENERIC(&err, ov_error_generic_out_of_memory);
+      goto cleanup;
+    }
+    if (!ov_wchar_to_utf8(module_path, OV_ARRAY_LENGTH(module_path), module_path_utf8, len + 1, NULL)) {
+      OV_ERROR_SET_GENERIC(&err, ov_error_generic_fail);
+      goto cleanup;
+    }
   }
-  if (!gcmz_lua_add_handler_script(lua, name, script, script_len, &err)) {
-    OV_ERROR_ADD_TRACE(&err);
-    goto cleanup;
+  {
+    struct gcmz_lua_context *const lua = get_lua(&err);
+    if (!lua) {
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
+    }
+    if (!gcmz_lua_add_handler_script(lua, script, script_len, module_path_utf8, &err)) {
+      OV_ERROR_ADD_TRACE(&err);
+      goto cleanup;
+    }
   }
 
   result = true;
 
 cleanup:
   if (!result) {
-    gcmz_logf_warn(&err, "%1$hs", gettext("failed to add handler script %1$hs"), name);
+    gcmz_logf_warn(&err,
+                   "%1$hs",
+                   gettext("failed to add handler script from %1$hs"),
+                   module_path_utf8 ? module_path_utf8 : "<unknown>");
     OV_ERROR_DESTROY(&err);
+  }
+  if (module_path_utf8) {
+    OV_ARRAY_DESTROY(&module_path_utf8);
+  }
+  if (module_path) {
+    OV_ARRAY_DESTROY(&module_path);
   }
   return result;
 }
