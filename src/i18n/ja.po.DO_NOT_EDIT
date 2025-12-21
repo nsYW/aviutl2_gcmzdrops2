@@ -143,8 +143,8 @@ msgstr "GCMZDrops の設定..."
 msgid "GCMZDrops requires AviUtl ExEdit2 %1$s or later."
 msgstr "GCMZDrops を使用するには AviUtl ExEdit2 %1$s 以降が必要です。"
 
-msgctxt "config_dialog"
-msgid "Handlers"
+msgctxt "script_type"
+msgid "Handler"
 msgstr "ハンドラー"
 
 msgid "M&inute"
@@ -159,7 +159,7 @@ msgstr "↓(&D)"
 msgid "Move &Up"
 msgstr "↑(&U)"
 
-msgctxt "handler_script"
+msgctxt "script_info"
 msgid "Name"
 msgstr "名前"
 
@@ -175,7 +175,7 @@ msgstr "コピー優先"
 msgid "Prefer direct read"
 msgstr "直接読み込み優先"
 
-msgctxt "handler_script"
+msgctxt "script_info"
 msgid "Priority"
 msgstr "優先度"
 
@@ -194,10 +194,18 @@ msgid "Save Destination"
 msgstr "保存先"
 
 msgctxt "config_dialog"
+msgid "Script Info"
+msgstr "スクリプト情報"
+
+msgctxt "script_type"
+msgid "Script Module"
+msgstr "スクリプトモジュール"
+
+msgctxt "config_dialog"
 msgid "Settings"
 msgstr "設定"
 
-msgctxt "handler_script"
+msgctxt "script_info"
 msgid "Source"
 msgstr "登録元"
 
@@ -239,6 +247,10 @@ msgstr ""
 "他のインスタンスを閉じて [再試行] をクリックしてください。\n"
 "\n"
 "キャンセルすると、外部連携APIなしで継続します。"
+
+msgctxt "script_info"
+msgid "Type"
+msgstr "種別"
 
 msgid "[GCMZDrops] Paste from Clipboard"
 msgstr "[GCMZDrops] クリップボードから貼り付け"
@@ -305,6 +317,9 @@ msgstr "タイムラインへのファイルの挿入に失敗しました"
 
 msgid "failed to paste from clipboard"
 msgstr "クリップボードからの貼り付けに失敗しました"
+
+msgid "failed to register script module %1$hs from %2$hs"
+msgstr "%1$hs からのスクリプトモジュール追加に失敗しました"
 
 msgid "failed to remove temporary directory"
 msgstr "一時ディレクトリの削除に失敗しました"
