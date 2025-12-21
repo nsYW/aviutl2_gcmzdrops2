@@ -187,6 +187,7 @@ add_library(gcmzdrops SHARED
   config_dialog.c
   config_dialog.rc
   config_dialog_combo_tooltip.c
+  config_dialog_listview_tooltip.c
   config_dialog_tooltip.c
   dataobj.c
   dataobj_stream.c
@@ -443,7 +444,7 @@ target_link_libraries(test_config PRIVATE
 )
 add_test(NAME test_config COMMAND test_config)
 
-add_executable(test_config_dialog config_dialog_test.c config_dialog.c config_dialog_combo_tooltip.c config_dialog_tooltip.c config.c json.c)
+add_executable(test_config_dialog config_dialog_test.c config_dialog.c config_dialog_combo_tooltip.c config_dialog_listview_tooltip.c config_dialog_tooltip.c config.c json.c)
 target_link_libraries(test_config_dialog PRIVATE
   gcmzdrops_intf
   ovbase

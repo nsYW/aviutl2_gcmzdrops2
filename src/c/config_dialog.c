@@ -17,6 +17,7 @@
 
 #include "config.h"
 #include "config_dialog_combo_tooltip.h"
+#include "config_dialog_listview_tooltip.h"
 #include "config_dialog_tooltip.h"
 #include "gcmz_types.h"
 
@@ -47,7 +48,7 @@ enum {
   id_group_debug = 400,
   id_check_show_debug_menu = 401,
 
-  id_list_handlers = 500,
+  id_list_scripts = 500,
 };
 
 enum {
@@ -71,6 +72,7 @@ struct dialog_data {
   void *enum_script_modules_context;
   struct config_dialog_tooltip *tooltip;
   struct config_dialog_combo_tooltip *combo_tooltip;
+  struct config_dialog_listview_tooltip *listview_tooltip;
   bool external_api_running;
   HFONT dialog_font;
   int current_tab;
@@ -447,35 +449,51 @@ static INT_PTR init_dialog(HWND dialog, struct dialog_data *data) {
 
   // Initialize handlers list view
   {
-    HWND list = GetDlgItem(dialog, id_list_handlers);
+    HWND list = GetDlgItem(dialog, id_list_scripts);
     SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+    // Get listview client width to calculate column widths
+    RECT list_rect;
+    GetClientRect(list, &list_rect);
+    int const list_width = list_rect.right - list_rect.left;
+
+    // Fixed column widths
+    int const type_width = 100;
+    int const priority_width = 50;
+    int const source_width = 200;
+    // Subtract scrollbar width and a small margin
+    int const scrollbar_width = GetSystemMetrics(SM_CXVSCROLL);
+    int const name_width = list_width - type_width - priority_width - source_width - scrollbar_width;
 
     LVCOLUMNW col = {0};
     col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 
     ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, pgettext("script_info", "Type"));
     col.pszText = buf;
-    col.cx = 90;
+    col.cx = type_width;
     col.iSubItem = 0;
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&col);
 
     ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, pgettext("script_info", "Name"));
     col.pszText = buf;
-    col.cx = 100;
+    col.cx = name_width > 100 ? name_width : 100;
     col.iSubItem = 1;
     SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&col);
 
     ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, pgettext("script_info", "Priority"));
     col.pszText = buf;
-    col.cx = 50;
+    col.cx = priority_width;
     col.iSubItem = 2;
     SendMessageW(list, LVM_INSERTCOLUMNW, 2, (LPARAM)&col);
 
     ov_snprintf_wchar(buf, sizeof(buf) / sizeof(WCHAR), ph, ph, pgettext("script_info", "Source"));
     col.pszText = buf;
-    col.cx = 150;
+    col.cx = source_width;
     col.iSubItem = 3;
     SendMessageW(list, LVM_INSERTCOLUMNW, 3, (LPARAM)&col);
+
+    // Create tooltip for listview
+    data->listview_tooltip = config_dialog_listview_tooltip_create(dialog, list, NULL);
 
     // Hide scripts list initially (Settings tab is shown first)
     ShowWindow(list, SW_HIDE);
@@ -509,7 +527,7 @@ static int const settings_tab_controls[] = {
 
 // Handlers tab controls (shown/hidden when switching tabs)
 static int const scripts_tab_controls[] = {
-    id_list_handlers,
+    id_list_scripts,
 };
 
 static void show_tab_controls(HWND dialog, int const *controls, size_t count, int show_cmd) {
@@ -606,7 +624,7 @@ static bool module_collect_callback(char const *name, char const *source, void *
 }
 
 static void populate_scripts_list(HWND dialog, struct dialog_data *data) {
-  HWND list = GetDlgItem(dialog, id_list_handlers);
+  HWND list = GetDlgItem(dialog, id_list_scripts);
   if (!list) {
     return;
   }
@@ -1175,6 +1193,7 @@ static INT_PTR CALLBACK dialog_proc(HWND dialog, UINT message, WPARAM wParam, LP
     if (data) {
       config_dialog_tooltip_destroy(&data->tooltip);
       config_dialog_combo_tooltip_destroy(&data->combo_tooltip);
+      config_dialog_listview_tooltip_destroy(&data->listview_tooltip);
 
       // Cleanup font
       if (data->dialog_font) {
