@@ -205,7 +205,7 @@ local function convert_effect(exo, section_name)
       if value then
         -- Apply transformation if specified
         if mapping.transform == "decode_exo_text" then
-          value = gcmz.decode_exo_text(value)
+          value = gcmz.decode_exo_text(value):gsub("\r?\n", "\\n")
         elseif mapping.decimals then
           value = format_number(value, mapping.decimals)
         end

@@ -319,6 +319,7 @@ static void test_exo_convert(void) {
   } const test_cases[] = {
       {TEST_PATH(L"1-src.exo"), TEST_PATH(L"1-dest.object")},
       {TEST_PATH(L"2-src.exo"), TEST_PATH(L"2-dest.object")},
+      {TEST_PATH(L"newline-src.exo"), TEST_PATH(L"newline-dest.object")},
   };
 
   for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); ++i) {
