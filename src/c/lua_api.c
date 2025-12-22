@@ -973,7 +973,11 @@ static int gcmz_lua_get_script_module(lua_State *const L) {
 
   // Get the module by name
   lua_getfield(L, -1, module_name);
-  lua_remove(L, -2); // Remove modules table, keep module or nil
+  if (lua_istable(L, -1)) {
+    lua_getfield(L, -1, "table");
+    lua_remove(L, -2); // Remove wrapper table
+  }
+  lua_remove(L, -2); // Remove modules table, keep module table or nil
   return 1;
 }
 
