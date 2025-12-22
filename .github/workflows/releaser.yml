@@ -76,9 +76,9 @@ jobs:
           name: attestation-zip
           path: attestations/
       - name: Install Inno Setup
-        shell: pwsh
+        shell: bash
         run: |
-          choco install innosetup --version=6.6.1 -y
+          winget install --id JRSoftware.InnoSetup -e -s winget
       - name: Build installer
         shell: bash
         run: |
