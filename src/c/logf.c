@@ -8,9 +8,6 @@
 #include <ovprintf.h>
 #include <ovutf.h>
 
-#include <ovl/os.h>
-#include <ovl/path.h>
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
