@@ -142,6 +142,10 @@ msgstr "GCMZDrops设置..."
 msgid "GCMZDrops requires AviUtl ExEdit2 %1$s or later."
 msgstr "GCMZDrops需要AviUtl ExEdit2 %1$s或更高版本。"
 
+msgctxt "script_type"
+msgid "Handler"
+msgstr ""
+
 msgid "M&inute"
 msgstr "分(&I)"
 
@@ -154,6 +158,10 @@ msgstr "下移(&D)"
 msgid "Move &Up"
 msgstr "上移(&U)"
 
+msgctxt "script_info"
+msgid "Name"
+msgstr ""
+
 msgid "OK"
 msgstr "确定"
 
@@ -165,6 +173,10 @@ msgstr "优先复制"
 
 msgid "Prefer direct read"
 msgstr "优先直接读取"
+
+msgctxt "script_info"
+msgid "Priority"
+msgstr ""
 
 msgctxt "external_api"
 msgid "Retry?"
@@ -179,6 +191,23 @@ msgstr "秒(&E)"
 
 msgid "Save Destination"
 msgstr "保存位置"
+
+msgctxt "config_dialog"
+msgid "Script Info"
+msgstr "脚本信息"
+
+msgctxt "script_type"
+msgid "Script Module"
+msgstr "脚本模块"
+
+#, fuzzy
+msgctxt "config_dialog"
+msgid "Settings"
+msgstr "GCMZDrops设置"
+
+msgctxt "script_info"
+msgid "Source"
+msgstr ""
 
 msgid ""
 "Specifies where to create files when dropping images from the browser, etc.\n"
@@ -219,6 +248,10 @@ msgstr ""
 "\n"
 "若取消，插件将在没有外部API的情况下继续运行。"
 
+msgctxt "script_info"
+msgid "Type"
+msgstr "类型"
+
 msgid "[GCMZDrops] Paste from Clipboard"
 msgstr "[GCMZDrops]从剪贴板粘贴"
 
@@ -240,13 +273,13 @@ msgctxt "external_api"
 msgid "external API initialized successfully"
 msgstr "外部API初始化成功"
 
-#, fuzzy
-msgid "failed to add handler script %1$hs"
-msgstr "处理器脚本 %1$hs 添加失败"
-
 #, fuzzy, c-format
 msgid "failed to add handler script file %1$ls"
 msgstr "处理器脚本文件 %1$ls 添加失败"
+
+#, fuzzy
+msgid "failed to add handler script from %1$hs"
+msgstr "处理器脚本 %1$hs 添加失败"
 
 msgid "failed to clean up temporary file"
 msgstr "临时文件清理失败"
@@ -286,11 +319,12 @@ msgstr "处理器脚本文件 %1$ls 添加失败"
 msgid "failed to insert files into timeline"
 msgstr "条件变量初始化失败"
 
-msgid "failed to load language resources, continuing without them."
-msgstr "语言资源加载失败，将在没有语言资源的情况下继续。"
-
 msgid "failed to paste from clipboard"
 msgstr "从剪贴板粘贴失败"
+
+#, fuzzy
+msgid "failed to register script module %1$hs from %2$hs"
+msgstr "从 %2$hs 注册脚本模块 %1$hs 失败"
 
 msgid "failed to remove temporary directory"
 msgstr "临时目录删除失败"
@@ -339,3 +373,6 @@ msgstr "未知的处理模式: %1$d"
 #. trans: This dagger helps UTF-8 detection. You don't need to translate this.
 msgid "†"
 msgstr "†"
+
+#~ msgid "failed to load language resources, continuing without them."
+#~ msgstr "语言资源加载失败，将在没有语言资源的情况下继续。"
